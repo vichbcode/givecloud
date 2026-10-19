@@ -37,10 +37,10 @@ GiveCloud/
 │   │   └── style.css          # design system bleu, mode sombre, responsive
 │   └── js/
 │       ├── config.js          # URL de l'API (vide = même origine)
-│       ├── theme.js           # thème clair/sombre + toasts
+│       ├── theme.js           # apparence (mode clair/sombre, accent, arrondis, fond) + toasts
 │       ├── landing.js         # animations vitrine, onglets, thème
 │       ├── auth.js            # page login
-│       └── app.js             # logique du cloud (upload, liste, dossiers…)
+│       └── app.js             # logique du cloud (upload, liste, dossiers, visionneuse, éditeur, paramètres…)
 └── worker/                    # ALTERNATIVE Cloudflare (optionnelle, même logique)
     ├── wrangler.toml
     └── src/index.js
@@ -82,7 +82,7 @@ GiveCloud/
    | + | `salt` | Single line text | — |
    | + | `iterations` | Number | Format: Integer |
    | + | `createdAt` | Created time | — (rempli automatiquement) |
-   | + | `quotaMo` | Number | Format: Integer, Default: `100` |
+   | + | `quotaMo` | Number | Format: Integer, Default: `23552` (23 Go) |
 
 5. Clique sur **+ Add or import → Create empty table**, nomme-la `Files` :
 
@@ -185,8 +185,9 @@ ou installe **GitHub Desktop** qui gère l'authentification pour toi.
    | `BASE_ID` | `appXXXXXXXX` |
    | `SESSION_SECRET` | généré par : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 
-   (Optionnelles : `QUOTA_MO_DEFAULT=100` — les noms de tables ont des valeurs
-   par défaut `Users` / `Files` / `Shares`.)
+   (Optionnelles : `QUOTA_MO_DEFAULT=23552` — quota par défaut d'un nouveau
+   compte, en Mo (23 Go). Les noms de tables ont des valeurs par défaut
+   `Users` / `Files` / `Shares`.)
 5. Clique **Deploy**.
    **Si tout va bien** : après ~30 s, Vercel affiche « Congratulations! » et te
    donne une URL du type `https://givecloud-xxxx.vercel.app`. Ouvre
@@ -232,8 +233,11 @@ Ouvre les DevTools (F12) pendant tous les tests.
    volontairement → 429 "Trop de tentatives." avec le même message d'erreur générique.
    (Attention : en serverless, chaque instance a sa limite — testée plusieurs fois
    d'affilée, tu tomberas sur la même instance et le 429 arrivera.)
-5. **Upload dangereux** : essaie d'envoyer un `.exe`, un `.html`, un `.sh` → 415 bloqué,
-   côté front ET côté serveur (testé aussi via `fetch` en curl pour contourner le front).
+5. **Upload dangereux** : essaie d'envoyer un `.exe`, un `.bat`, un `.ps1`, un `.dll`
+   → 415 bloqué, côté front ET côté serveur (testé aussi via `fetch` en curl pour
+   contourner le front). Les fichiers de **code** (`.js`, `.py`, `.html`…) sont
+   autorisés : ils ne sont jamais exécutés (téléchargement en `attachment`, aperçu
+   servi en `inline` mais sous CSP `sandbox`), et uniquement éditables dans Monaco.
 6. **Taille** : essaie un fichier de 4 Mo → 413 côté front (barre d'erreur) et côté
    serveur (teste avec curl pour prouver la validation serveur).
 7. **XSS** : renomme un fichier en `<img src=x onerror=alert(1)>` → le nom s'affiche
@@ -245,7 +249,15 @@ Ouvre les DevTools (F12) pendant tous les tests.
    restaure-le, vérifie qu'aucun autre utilisateur ne le voit.
 10. **Partage** : crée un lien avec expiration 1 h, ouvre-le en navigation privée
     (sans cookies) → il fonctionne ; clique "Révoquer" → rechargement en navigation
-    privée → lien mort.
+    privée → lien mort. Crée un lien « **Jamais** » → il ne doit jamais expirer.
+11. **Profil** : change ton e-mail dans Paramètres → la session reste valide (cookie
+    re-signé) ; re-connecte-toi avec le nouvel e-mail. Change ton mot de passe → un
+    ancien mot de passe doit être refusé, et le nouveau accepté (sel + hash neufs).
+12. **Corbeille — suppression définitive** : supprime un fichier, puis dans la corbeille
+    clique « Supprimer définitivement » (ou « Vider la corbeille ») → le record disparaît
+    réellement d'Airtable (et non plus seulement masqué).
+13. **Éditeur** : ouvre un `.js`/`.txt`, modifie le contenu, clique « Enregistrer » →
+    recharge le fichier (l'éditeur affiche la nouvelle version, la taille est mise à jour).
 
 ---
 
@@ -254,6 +266,8 @@ Ouvre les DevTools (F12) pendant tous les tests.
 - [x] Token Airtable uniquement en variables d'environnement Vercel, jamais dans le front ni Git
 - [x] `.gitignore` couvre `.env`, `.dev.vars`, `.vercel/`, secrets
 - [x] Mots de passe hachés PBKDF2-SHA256, 210 000 itérations, sel unique 16 octets
+- [x] Changement de mot de passe : ancien vérifié, sel + hash régénérés
+- [x] Changement d'e-mail : unicité revérifiée, cookie JWT re-signé
 - [x] Comparaison de hashs à temps constant
 - [x] Session : JWT signé HMAC-SHA256 en cookie `HttpOnly; Secure; SameSite=Strict` (7 jours)
 - [x] Aucun jeton en localStorage ni dans le DOM
@@ -263,12 +277,14 @@ Ouvre les DevTools (F12) pendant tous les tests.
 - [x] En-têtes : X-Content-Type-Options, Referrer-Policy, HSTS, X-Frame-Options,
       Permissions-Policy sur toutes les pages (via vercel.json) + toutes les réponses API
 - [x] Validation serveur : taille ≤ 3 Mo (plafond Vercel), extension bloquée
-      (exécutables, .html, .js…), nom de fichier assaini
+      (exécutables natifs uniquement — le code éditable est autorisé)
 - [x] Téléchargement toujours servi avec `Content-Disposition: attachment`
-      (sauf aperçu images/PDF en `inline` + CSP `sandbox`)
+- [x] Aperçu / visionneuse / éditeur servis en `inline` sous CSP `sandbox`
+      + `X-Content-Type-Options: nosniff` (aucune exécution possible)
 - [x] URLs d'attachments Airtable régénérées à chaque téléchargement, jamais stockées
 - [x] Retry automatique sur 429 (back-off exponentiel, 4 essais)
-- [x] Purge de la corbeille après 30 jours
+- [x] Purge de la corbeille après 30 jours ; suppression définitive sur demande
+- [x] Rate limiting dédié sur le changement de mot de passe (5 essais / 10 min / IP)
 - [x] Front : `textContent` uniquement pour les données utilisateur (anti-XSS),
       `innerHTML` interdit sur données dynamiques
 - [x] CSP stricte en `<meta>` sur les pages HTML
@@ -289,7 +305,8 @@ Ouvre les DevTools (F12) pendant tous les tests.
    En pratique il faut un plan Team (100 000 appels/mois) pour un usage sérieux.
 5. **1 Go de stockage et 1 000 enregistrements/base** en gratuit : ~ quelques centaines
    de fichiers max, partagés par tous les utilisateurs. Les quotas par utilisateur
-   (100 Mo par défaut) sont une convention interne, pas une isolation physique.
+   (23 Go par défaut) sont une convention interne, **pas** une isolation physique : le
+   stockage réel reste celui d'Airtable (1 Go en gratuit).
 6. **Proxy de téléchargement** : le serveur streamme les fichiers (3 Mo max), ce qui
    compte dans la bande passante et la durée d'exécution de la fonction Vercel
    (maxDuration = 30 s configuré).
@@ -301,3 +318,9 @@ Ouvre les DevTools (F12) pendant tous les tests.
    à ta première liste suivante. Tant que personne ne visite, rien n'est purgé.
 9. **Plan Hobby Vercel** : fonctions serverless limitées (durée, instances) —
    très largement suffisant pour un usage perso, à upgrader pour un vrai service.
+10. **Fichiers de 1 Go impossibles avec Airtable** : l'API d'Airtable plafonne chaque
+    pièce jointe à 5 Mo, et Vercel limite le corps de requête à ~4,5 Mo. Les limites
+    demandées « 1 Go par fichier » et « 23 Go par utilisateur » ne peuvent donc être
+    que des conventions affichées, pas des capacités réelles. Pour du vrai gros stockage
+    il faudrait un stockage objet (Cloudflare R2, Vercel Blob, AWS S3) à la place des
+    pièces jointes Airtable — c'est une refonte de la couche d'upload.

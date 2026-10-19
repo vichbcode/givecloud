@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0000f2">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; child-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
   <meta name="robots" content="noindex">
   <title>Mon cloud — GiveCloud</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,6 +22,7 @@
       <button type="button" data-vue="fichiers" class="actif">Fichiers</button>
       <button type="button" data-vue="partages">Partages</button>
       <button type="button" data-vue="corbeille">Corbeille</button>
+      <button type="button" data-vue="parametres">Réglages</button>
     </nav>
     <button class="btn-icone" id="btn-deconnexion-mobile" type="button" title="Se déconnecter" aria-label="Se déconnecter" style="background:rgba(255,255,255,.15); border-color:transparent; color:#fff">⏻</button>
   </div>
@@ -39,6 +40,9 @@
         </button>
         <button type="button" data-vue="corbeille">
           <span aria-hidden="true">🗑</span> Corbeille
+        </button>
+        <button type="button" data-vue="parametres">
+          <span aria-hidden="true">⚙</span> Paramètres
         </button>
       </nav>
       <div class="sidebar-bas">
@@ -79,7 +83,7 @@
         <!-- ═══ Vue : fichiers ═══ -->
         <section id="vue-fichiers" aria-label="Mes fichiers">
           <div class="zone-depot-app" id="zone-depot-app">
-            Glisse tes fichiers ici (5 Mo max par envoi) ou clique sur « Envoyer »
+            Glisse tes fichiers ici ou clique sur « Envoyer »
           </div>
           <div id="conteneur-liste"></div>
         </section>
@@ -92,8 +96,93 @@
 
         <!-- ═══ Vue : corbeille ═══ -->
         <section id="vue-corbeille" hidden aria-label="Corbeille">
-          <p class="label-mono">// corbeille — purge automatique après 30 jours</p>
+          <div class="barre-titre-vue">
+            <p class="label-mono">// corbeille — purge automatique après 30 jours</p>
+            <button class="btn btn-danger btn-petit" id="btn-vider-corbeille" type="button">Vider la corbeille</button>
+          </div>
           <div id="liste-corbeille"></div>
+        </section>
+
+        <!-- ═══ Vue : paramètres ═══ -->
+        <section id="vue-parametres" hidden aria-label="Paramètres">
+          <div class="grille-parametres">
+            <!-- Profil -->
+            <div class="carte-param">
+              <p class="label-mono">// profil</p>
+              <h2 style="font-size:1.35rem">Mes informations</h2>
+              <div class="champ">
+                <label for="param-email">Adresse e-mail</label>
+                <input type="email" id="param-email" autocomplete="email" maxlength="254">
+              </div>
+              <button class="btn btn-bleu btn-petit" type="button" id="btn-maj-email">Enregistrer l'e-mail</button>
+
+              <hr class="sep-param">
+
+              <h3 style="font-size:1.1rem">Mot de passe</h3>
+              <div class="champ">
+                <label for="param-pass-actuel">Mot de passe actuel</label>
+                <input type="password" id="param-pass-actuel" autocomplete="current-password" maxlength="200">
+              </div>
+              <div class="champ">
+                <label for="param-pass-nouveau">Nouveau mot de passe (8 caractères min)</label>
+                <input type="password" id="param-pass-nouveau" autocomplete="new-password" maxlength="200">
+              </div>
+              <button class="btn btn-contour btn-petit" type="button" id="btn-maj-pass">Changer le mot de passe</button>
+
+              <hr class="sep-param">
+
+              <p class="label-mono">// compte</p>
+              <ul class="meta-compte" id="meta-compte"></ul>
+            </div>
+
+            <!-- Apparence -->
+            <div class="carte-param">
+              <p class="label-mono">// personnalisation</p>
+              <h2 style="font-size:1.35rem">Design du site</h2>
+
+              <div class="champ">
+                <label for="param-mode">Thème</label>
+                <select id="param-mode">
+                  <option value="systeme">Auto (système)</option>
+                  <option value="clair">Clair</option>
+                  <option value="sombre">Sombre</option>
+                </select>
+              </div>
+
+              <div class="champ">
+                <label for="param-accent">Couleur d'accent</label>
+                <div class="ligne-accent">
+                  <input type="color" id="param-accent" value="#0000f2">
+                  <input type="text" id="param-accent-hex" maxlength="7" spellcheck="false" class="input-hex">
+                </div>
+                <div class="nuancier" id="nuancier"></div>
+              </div>
+
+              <div class="champ">
+                <label for="param-fond">Fond</label>
+                <select id="param-fond">
+                  <option value="uni">Uni</option>
+                  <option value="doux">Halo coloré</option>
+                  <option value="degrade">Dégradé</option>
+                </select>
+              </div>
+
+              <div class="champ">
+                <label for="param-radius">Arrondi des coins : <span id="param-radius-val">14</span> px</label>
+                <input type="range" id="param-radius" min="0" max="26" step="1" value="14">
+              </div>
+
+              <div class="apercu-apparence" id="apercu-apparence">
+                <span class="pastille"></span>
+                <button class="btn btn-bleu btn-petit" type="button">Aperçu accent</button>
+                <span class="lien-demo">lien de démo</span>
+              </div>
+
+              <div class="pied-param">
+                <button class="btn btn-contour btn-petit" type="button" id="btn-reset-apparence">Réinitialiser le design</button>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
     </div>
@@ -160,6 +249,7 @@
           <option value="72">3 jours</option>
           <option value="168">7 jours</option>
           <option value="720">30 jours</option>
+          <option value="jamais">Jamais (illimité)</option>
         </select>
       </div>
       <button class="btn btn-bleu btn-petit" type="button" id="creer-partage">Créer le lien</button>
@@ -177,27 +267,31 @@
     </div>
   </div>
 
-  <!-- Aperçu -->
+  <!-- Visionneuse universelle + éditeur de code -->
   <div class="modale-fond" id="modale-apercu" role="dialog" aria-modal="true" aria-labelledby="titre-apercu">
     <div class="modale modale-apercu">
-      <h2 id="titre-apercu">Aperçu</h2>
-      <div class="contenu-apercu" id="contenu-apercu"></div>
-      <div class="pied">
-        <a class="btn btn-bleu btn-petit" id="apercu-telecharger" href="#" download>Télécharger</a>
-        <button class="btn btn-contour btn-petit" type="button" data-fermer>Fermer</button>
+      <div class="entete-apercu">
+        <h2 id="titre-apercu">Aperçu</h2>
+        <div class="outils-apercu">
+          <button class="btn btn-bleu btn-petit" type="button" id="apercu-enregistrer" hidden>💾 Enregistrer</button>
+          <a class="btn btn-contour btn-petit" id="apercu-telecharger" href="#" download>Télécharger</a>
+          <button class="btn btn-contour btn-petit" type="button" id="apercu-partager">Partager</button>
+          <button class="btn btn-contour btn-petit" type="button" data-fermer>Fermer</button>
+        </div>
       </div>
+      <div class="contenu-apercu" id="contenu-apercu"></div>
+      <div class="pied-apercu" id="pied-apercu" hidden></div>
     </div>
   </div>
 
-  <!-- Confirmation de suppression -->
-  <div class="modale-fond" id="modale-supprimer" role="dialog" aria-modal="true" aria-labelledby="titre-supprimer">
+  <!-- Confirmation générique -->
+  <div class="modale-fond" id="modale-confirmer" role="dialog" aria-modal="true" aria-labelledby="titre-confirmer">
     <div class="modale">
-      <h2 id="titre-supprimer">Mettre à la corbeille ?</h2>
-      <p style="color:var(--muted)" id="supprimer-nom"></p>
-      <p style="color:var(--muted); font-size:.9rem">Il sera purgé définitivement après 30 jours. Tu peux le restaurer d'ici là.</p>
+      <h2 id="titre-confirmer">Confirmer</h2>
+      <p style="color:var(--muted)" id="texte-confirmer"></p>
       <div class="pied">
-        <button class="btn btn-contour btn-petit" type="button" data-fermer>Annuler</button>
-        <button class="btn btn-danger btn-petit" type="button" id="confirmer-supprimer">Supprimer</button>
+        <button class="btn btn-contour btn-petit" type="button" id="confirmer-annuler">Annuler</button>
+        <button class="btn btn-danger btn-petit" type="button" id="confirmer-ok">Confirmer</button>
       </div>
     </div>
   </div>

@@ -1,5 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// GiveCloud — application (liste, upload, dossiers, partages…)
+// GiveCloud — application (liste, upload, dossiers, partages,
+// paramètres, visionneuse universelle + éditeur de code Monaco).
 // Règle d'or : AUCUNE donnée utilisateur en innerHTML.
 // Tout le DOM dynamique est construit avec createElement + textContent.
 // ═══════════════════════════════════════════════════════════════
@@ -7,25 +8,21 @@
   'use strict';
 
   const API = (window.GIVECLOUD_CONFIG && window.GIVECLOUD_CONFIG.API_BASE) || '';
-  // Limite d'upload : 5 Mo (Airtable) ou 3 Mo si Vercel tronque le corps de
-  // requête. La vraie valeur est récupérée sur /api/health au démarrage.
-  let MAX_OCTETS = 5 * 1024 * 1024;
-
-  /** Texte de la zone de dépôt, à jour avec la vraie limite. */
-  function texteZoneDepot() {
-    const mo = Math.round(MAX_OCTETS / (1024 * 1024));
-    return 'Glisse tes fichiers ici (' + mo + ' Mo max par envoi) ou clique sur « Envoyer »';
-  }
+  // Limite d'upload : récupérée sur /api/health au démarrage (3 Mo sur Vercel).
+  let MAX_OCTETS = 3 * 1024 * 1024;
 
   // ── État de l'application ──
   const etat = {
-    vue: 'fichiers',          // fichiers | partages | corbeille
-    chemin: '/',               // dossier courant
-    fichiers: [],             // liste affichée
+    vue: 'fichiers',          // fichiers | partages | corbeille | parametres
+    chemin: '/',
+    fichiers: [],
     tri: 'nom',
     recherche: '',
-    fichierCourant: null,     // fichier ciblé par une modale
-    quota: null
+    fichierCourant: null,
+    quota: null,
+    moi: null,
+    editeur: null,            // instance Monaco courante
+    texteOriginal: null
   };
 
   // ── Raccourcis DOM ──
@@ -35,24 +32,34 @@
   const zoneDepot = $('zone-depot-app');
   const inputUpload = $('input-upload');
 
+  /** Vide un élément (jamais innerHTML). */
+  function vider(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
   // ═════════ Utilitaires ═════════
 
-  /** Format de taille lisible : 1 234 567 octets → "1,2 Mo". */
   function formaterTaille(o) {
     if (!o) return '0 o';
-    const unites = ['o', 'Ko', 'Mo', 'Go'];
+    const unites = ['o', 'Ko', 'Mo', 'Go', 'To'];
     let i = 0;
     let n = o;
     while (n >= 1024 && i < unites.length - 1) { n /= 1024; i++; }
     return (i === 0 ? String(Math.round(n)) : n.toFixed(1).replace('.', ',')) + ' ' + unites[i];
   }
 
-  /** Date ISO → date locale lisible. */
   function formaterDate(iso) {
     if (!iso) return '—';
     try {
       return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
     } catch { return '—'; }
+  }
+
+  function texteZoneDepot() {
+    const mo = Math.round(MAX_OCTETS / (1024 * 1024));
+    return 'Glisse tes fichiers ici (' + mo + ' Mo max par envoi) ou clique sur « Envoyer »';
+  }
+
+  function octetsDe(texte) {
+    try { return new TextEncoder().encode(texte).length; } catch { return texte.length; }
   }
 
   /** Appel API JSON avec gestion 401 (redirection login). */
@@ -75,26 +82,58 @@
     return data;
   }
 
-  /** Ouvre une modale. */
+  function credentials() { return API ? 'include' : 'same-origin'; }
+
+  // ── Modales ──
   function ouvrirModale(id) {
     const m = $(id);
     m.classList.add('visible');
     const premier = m.querySelector('input, select, button');
     if (premier) premier.focus();
   }
-  /** Ferme une modale (clic sur fond, bouton [data-fermer], Échap). */
   function fermerModale(id) { $(id).classList.remove('visible'); }
 
   document.querySelectorAll('.modale-fond').forEach(function (fond) {
-    fond.addEventListener('click', function (e) { if (e.target === fond) fond.classList.remove('visible'); });
+    fond.addEventListener('click', function (e) {
+      if (e.target === fond) {
+        if (fond.id === 'modale-apercu') detruireEditeur();
+        fond.classList.remove('visible');
+      }
+    });
     fond.querySelectorAll('[data-fermer]').forEach(function (b) {
-      b.addEventListener('click', function () { fond.classList.remove('visible'); });
+      b.addEventListener('click', function () {
+        if (fond.id === 'modale-apercu') detruireEditeur();
+        fond.classList.remove('visible');
+      });
     });
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
-      document.querySelectorAll('.modale-fond.visible').forEach(function (m) { m.classList.remove('visible'); });
+      document.querySelectorAll('.modale-fond.visible').forEach(function (m) {
+        if (m.id === 'modale-apercu') detruireEditeur();
+        m.classList.remove('visible');
+      });
     }
+  });
+
+  // ── Confirmation générique ──
+  let actionConfirmer = null;
+  function demanderConfirmation(titre, message, libelle, action) {
+    $('titre-confirmer').textContent = titre;
+    $('texte-confirmer').textContent = message;
+    $('confirmer-ok').textContent = libelle || 'Confirmer';
+    actionConfirmer = action;
+    ouvrirModale('modale-confirmer');
+  }
+  $('confirmer-ok').addEventListener('click', async function () {
+    const a = actionConfirmer;
+    actionConfirmer = null;
+    fermerModale('modale-confirmer');
+    if (a) await a();
+  });
+  $('confirmer-annuler').addEventListener('click', function () {
+    actionConfirmer = null;
+    fermerModale('modale-confirmer');
   });
 
   // ═════════ Navigation entre vues ═════════
@@ -104,6 +143,7 @@
     $('vue-fichiers').hidden = vue !== 'fichiers';
     $('vue-partages').hidden = vue !== 'partages';
     $('vue-corbeille').hidden = vue !== 'corbeille';
+    $('vue-parametres').hidden = vue !== 'parametres';
     $('outils-fichiers').style.display = vue === 'fichiers' ? '' : 'none';
     filAriane.style.display = vue === 'fichiers' ? '' : 'none';
     document.querySelectorAll('.sidebar-nav button').forEach(function (b) {
@@ -112,6 +152,7 @@
     if (vue === 'fichiers') chargerFichiers();
     else if (vue === 'partages') chargerPartages();
     else if (vue === 'corbeille') chargerCorbeille();
+    else if (vue === 'parametres') chargerParametres();
   }
 
   document.querySelectorAll('.sidebar-nav button').forEach(function (b) {
@@ -121,8 +162,7 @@
   // ═════════ Fil d'ariane ═════════
 
   function rendreFilAriane() {
-    // On vide avec textContent puis reconstruit : jamais de innerHTML.
-    while (filAriane.firstChild) filAriane.removeChild(filAriane.firstChild);
+    vider(filAriane);
     const segments = etat.chemin.split('/').filter(Boolean);
     const btnRacine = document.createElement('button');
     btnRacine.type = 'button';
@@ -145,7 +185,7 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = seg;
-        const cible = cheminPartiel; // capture de la valeur
+        const cible = cheminPartiel;
         btn.addEventListener('click', function () { naviguerVers(cible); });
         filAriane.appendChild(btn);
       }
@@ -173,7 +213,7 @@
       remplissage.classList.toggle('plein', q.pourcentage >= 95);
       barre.setAttribute('aria-valuenow', String(q.pourcentage));
       $('jauge-detail').textContent = formaterTaille(q.utiliseOctets) + ' / ' + formaterTaille(q.quotaOctets);
-    } catch { /* la jauge reste telle quelle en cas d'erreur */ }
+    } catch { /* jauge inchangée */ }
   }
 
   async function chargerFichiers() {
@@ -206,22 +246,105 @@
     }
   }
 
-  // ═════════ Rendu de la liste de fichiers ═════════
+  // ═════════ Classement des fichiers (icône + visionneuse) ═════════
 
-  function iconePour(fichier) {
-    // Renvoie un caractère emoji simple (textContent = sûr).
-    if (fichier.estDossier) return '📁';
-    const t = fichier.type || '';
-    if (t.startsWith('image/')) return '🖼';
-    if (t === 'application/pdf') return '📕';
-    if (t.startsWith('video/')) return '🎬';
-    if (t.startsWith('audio/')) return '🎵';
-    if (t.startsWith('text/')) return '📄';
+  const EXT_CODE = new Set([
+    'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'vue', 'svelte', 'json', 'jsonc', 'json5',
+    'html', 'htm', 'xml', 'css', 'scss', 'sass', 'less', 'styl', 'md', 'markdown',
+    'txt', 'log', 'csv', 'tsv', 'yml', 'yaml', 'ini', 'env', 'conf', 'cfg', 'toml',
+    'sql', 'graphql', 'gql', 'sh', 'bash', 'zsh', 'bat', 'ps1', 'py', 'pyw', 'rb',
+    'php', 'pl', 'lua', 'r', 'go', 'rs', 'java', 'kt', 'kts', 'scala', 'swift',
+    'c', 'h', 'cpp', 'hpp', 'cc', 'hh', 'cs', 'm', 'mm', 'dart', 'diff', 'patch',
+    'dockerfile', 'makefile', 'cmake', 'gradle', 'properties', 'tex', 'srt', 'vtt'
+  ]);
+
+  function extension(nom) {
+    const n = String(nom || '').toLowerCase();
+    if (n === 'dockerfile' || n === 'makefile') return n;
+    const i = n.lastIndexOf('.');
+    return i > 0 ? n.slice(i + 1) : '';
+  }
+
+  function estTexteOuCode(f) {
+    const t = f.type || '';
+    if (t.startsWith('text/')) return true;
+    if (/^application\/(json|xml|javascript|x-yaml|x-sh|x-httpd-php|x-python)/.test(t)) return true;
+    return EXT_CODE.has(extension(f.nom));
+  }
+
+  function classerFichier(f) {
+    const t = f.type || '';
+    if (t.startsWith('image/')) return 'image';
+    if (t.startsWith('video/')) return 'video';
+    if (t.startsWith('audio/')) return 'audio';
+    if (t === 'application/pdf') return 'pdf';
+    if (estTexteOuCode(f)) return 'code';
+    return 'autre';
+  }
+
+  function iconePour(f) {
+    if (f.estDossier) return '📁';
+    const c = classerFichier(f);
+    if (c === 'image') return '🖼';
+    if (c === 'video') return '🎬';
+    if (c === 'audio') return '🎵';
+    if (c === 'pdf') return '📕';
+    if (c === 'code') return '⌨';
     return '📎';
   }
 
+  // ── Monaco (chargé à la demande, depuis un CDN) ──
+  const CDN_MONACO = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
+  let promesseMonaco = null;
+
+  function chargerMonaco() {
+    if (window.monaco) return Promise.resolve(window.monaco);
+    if (promesseMonaco) return promesseMonaco;
+    promesseMonaco = new Promise(function (resolve, reject) {
+      const s = document.createElement('script');
+      s.src = CDN_MONACO + '/loader.js';
+      s.onload = function () {
+        try {
+          window.require.config({ paths: { vs: CDN_MONACO } });
+          window.require(['vs/editor/editor.main'], function () { resolve(window.monaco); });
+        } catch (e) { reject(e); }
+      };
+      s.onerror = function () { reject(new Error("Impossible de charger l'éditeur.")); };
+      document.head.appendChild(s);
+    });
+    return promesseMonaco;
+  }
+
+  const LANG_MONACO = {
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+    ts: 'typescript', tsx: 'typescript', json: 'json', jsonc: 'json', json5: 'json',
+    html: 'html', htm: 'html', xml: 'xml', svg: 'xml', css: 'css', scss: 'scss', sass: 'scss', less: 'less',
+    md: 'markdown', markdown: 'markdown', yml: 'yaml', yaml: 'yaml', ini: 'ini', toml: 'ini',
+    sql: 'sql', graphql: 'graphql', gql: 'graphql', sh: 'shell', bash: 'shell', zsh: 'shell',
+    bat: 'bat', ps1: 'powershell', py: 'python', pyw: 'python', rb: 'ruby', php: 'php',
+    lua: 'lua', r: 'r', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', kts: 'kotlin',
+    scala: 'scala', swift: 'swift', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cc: 'cpp',
+    hh: 'cpp', cs: 'csharp', dart: 'dart', dockerfile: 'dockerfile', makefile: 'makefile',
+    vue: 'html', svelte: 'html', txt: 'plaintext', log: 'plaintext', csv: 'plaintext',
+    tsx_: 'typescript'
+  };
+
+  function langueDe(nom) {
+    return LANG_MONACO[extension(nom)] || 'plaintext';
+  }
+
+  function detruireEditeur() {
+    if (etat.editeur) {
+      try { etat.editeur.dispose(); } catch { /* déjà détruit */ }
+      etat.editeur = null;
+    }
+    etat.texteOriginal = null;
+  }
+
+  // ═════════ Rendu de la liste ═════════
+
   function afficherVide(message) {
-    while (conteneurListe.firstChild) conteneurListe.removeChild(conteneurListe.firstChild);
+    vider(conteneurListe);
     const div = document.createElement('div');
     div.className = 'vide';
     const grand = document.createElement('div');
@@ -235,18 +358,16 @@
   }
 
   function rendreListe() {
-    // Recherche filtrée côté client sur la liste déjà chargée.
     const q = etat.recherche.toLowerCase();
     const fichiers = etat.fichiers.filter(function (f) {
       return !q || f.nom.toLowerCase().includes(q);
     });
-    // Dossiers toujours en premier.
     fichiers.sort(function (a, b) {
       if (a.estDossier !== b.estDossier) return a.estDossier ? -1 : 1;
       return 0;
     });
 
-    while (conteneurListe.firstChild) conteneurListe.removeChild(conteneurListe.firstChild);
+    vider(conteneurListe);
     if (fichiers.length === 0) {
       afficherVide(q ? 'Aucun résultat pour « ' + q + ' ».' : 'Ce dossier est vide. Dépose un fichier pour commencer.');
       return;
@@ -254,7 +375,6 @@
 
     const table = document.createElement('table');
     table.className = 'tableau-fichiers';
-    // <thead>
     const thead = document.createElement('thead');
     const trHead = document.createElement('tr');
     [['Nom', ''], ['Taille', 'col-taille'], ['Type', 'col-type'], ['Date', 'col-date'], ['', '']].forEach(function (c) {
@@ -265,7 +385,6 @@
     });
     thead.appendChild(trHead);
     table.appendChild(thead);
-    // <tbody>
     const tbody = document.createElement('tbody');
     fichiers.forEach(function (f) { tbody.appendChild(ligneFichier(f)); });
     table.appendChild(tbody);
@@ -275,7 +394,6 @@
   function ligneFichier(f) {
     const tr = document.createElement('tr');
 
-    // Colonne nom
     const tdNom = document.createElement('td');
     const wrap = document.createElement('div');
     wrap.className = 'cell-nom';
@@ -290,39 +408,33 @@
     boutonNom.title = f.nom;
     boutonNom.addEventListener('click', function () {
       if (f.estDossier) naviguerVers((f.chemin === '/' ? '' : f.chemin) + '/' + f.nom);
-      else ouvrirApercu(f);
+      else ouvrirFichier(f);
     });
     wrap.appendChild(ico);
     wrap.appendChild(boutonNom);
     tdNom.appendChild(wrap);
     tr.appendChild(tdNom);
 
-    // Colonne taille
     const tdTaille = document.createElement('td');
     tdTaille.textContent = f.estDossier ? '—' : formaterTaille(f.taille);
     tr.appendChild(tdTaille);
 
-    // Colonne type
     const tdType = document.createElement('td');
     tdType.className = 'col-type';
     tdType.textContent = f.estDossier ? 'dossier' : (f.type.split('/').pop() || 'inconnu');
     tr.appendChild(tdType);
 
-    // Colonne date
     const tdDate = document.createElement('td');
     tdDate.className = 'col-date';
     tdDate.textContent = formaterDate(f.creeLe);
     tr.appendChild(tdDate);
 
-    // Colonne actions
     const tdActions = document.createElement('td');
     const actions = document.createElement('div');
     actions.className = 'actions-ligne';
 
     if (!f.estDossier) {
-      if (f.type.startsWith('image/') || f.type === 'application/pdf') {
-        actions.appendChild(btnAction('👀', 'Aperçu', function () { ouvrirApercu(f); }));
-      }
+      actions.appendChild(btnAction('👀', 'Ouvrir', function () { ouvrirFichier(f); }));
       actions.appendChild(btnAction('⬇', 'Télécharger', function () { telecharger(f); }));
       actions.appendChild(btnAction('🔗', 'Partager', function () { ouvrirPartage(f); }));
     }
@@ -346,7 +458,7 @@
     return b;
   }
 
-  // ═════════ Upload (XHR pour la barre de progression) ═════════
+  // ═════════ Upload ═════════
 
   function uploaderFichiers(fichiers) {
     const liste = Array.from(fichiers);
@@ -355,10 +467,8 @@
     let reste = liste.length;
 
     liste.forEach(function (f) {
-      // Validation côté UX (le serveur revalide) :
       if (f.size > MAX_OCTETS) {
-        const mo = Math.round(MAX_OCTETS / (1024 * 1024));
-        window.GC_toast('« ' + f.name + ' » dépasse ' + mo + ' Mo — ignoré.', 'erreur');
+        window.GC_toast('« ' + f.name + ' » dépasse ' + Math.round(MAX_OCTETS / 1048576) + ' Mo — ignoré.', 'erreur');
         reste--;
         return;
       }
@@ -371,8 +481,7 @@
       xhr.withCredentials = Boolean(API);
       xhr.upload.addEventListener('progress', function (e) {
         if (e.lengthComputable && zoneDepot) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          zoneDepot.textContent = 'Envoi de ' + f.name + '… ' + pct + '%';
+          zoneDepot.textContent = 'Envoi de ' + f.name + '… ' + Math.round((e.loaded / e.total) * 100) + '%';
         }
       });
       xhr.addEventListener('load', function () {
@@ -381,7 +490,7 @@
           succes++;
         } else {
           let msg = 'Échec de l\'envoi de ' + f.name;
-          try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* réponse non-JSON */ }
+          try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* non-JSON */ }
           window.GC_toast(msg, 'erreur');
         }
         if (reste === 0) termineUpload(succes, liste.length);
@@ -409,18 +518,11 @@
     inputUpload.value = '';
   });
 
-  // Glisser-déposer sur la zone de l'app (et tout le conteneur).
   ['dragenter', 'dragover'].forEach(function (ev) {
-    zoneDepot.addEventListener(ev, function (e) {
-      e.preventDefault();
-      zoneDepot.classList.add('survol');
-    });
+    zoneDepot.addEventListener(ev, function (e) { e.preventDefault(); zoneDepot.classList.add('survol'); });
   });
   ['dragleave', 'drop'].forEach(function (ev) {
-    zoneDepot.addEventListener(ev, function (e) {
-      e.preventDefault();
-      zoneDepot.classList.remove('survol');
-    });
+    zoneDepot.addEventListener(ev, function (e) { e.preventDefault(); zoneDepot.classList.remove('survol'); });
   });
   zoneDepot.addEventListener('drop', function (e) {
     if (e.dataTransfer && e.dataTransfer.files) uploaderFichiers(e.dataTransfer.files);
@@ -439,7 +541,6 @@
   });
   $('tri').addEventListener('change', function (e) {
     etat.tri = e.target.value;
-    // Tri côté serveur (nom/taille) ; la date est triée par le Worker aussi.
     chargerFichiers();
   });
 
@@ -506,25 +607,25 @@
 
   function ouvrirSupprimer(f) {
     etat.fichierCourant = f;
-    $('supprimer-nom').textContent = f.nom;
-    ouvrirModale('modale-supprimer');
+    demanderConfirmation(
+      'Mettre à la corbeille ?',
+      '« ' + f.nom + ' » sera purgé définitivement après 30 jours. Tu peux le restaurer d\'ici là.',
+      'Mettre à la corbeille',
+      async function () {
+        try {
+          await api('/api/files/' + f.id, { method: 'DELETE' });
+          window.GC_toast('Envoyé à la corbeille.', 'succes');
+          chargerFichiers();
+        } catch (err) {
+          window.GC_toast(err.message, 'erreur');
+        }
+      }
+    );
   }
-  $('confirmer-supprimer').addEventListener('click', async function () {
-    if (!etat.fichierCourant) return;
-    try {
-      await api('/api/files/' + etat.fichierCourant.id, { method: 'DELETE' });
-      fermerModale('modale-supprimer');
-      window.GC_toast('Envoyé à la corbeille.', 'succes');
-      chargerFichiers();
-    } catch (err) {
-      window.GC_toast(err.message, 'erreur');
-    }
-  });
 
-  // ═════════ Téléchargement (cookie envoyé automatiquement) ═════════
+  // ═════════ Téléchargement ═════════
 
   function telecharger(f) {
-    // Le Worker streamme le fichier avec Content-Disposition: attachment.
     const lien = document.createElement('a');
     lien.href = API + '/api/files/' + f.id + '/download';
     lien.rel = 'noopener';
@@ -533,53 +634,133 @@
     lien.remove();
   }
 
-  // ═════════ Aperçu (images / PDF) ═════════
+  // ═════════ Visionneuse universelle + éditeur de code ═════════
 
-  function ouvrirApercu(f) {
+  function ouvrirFichier(f) {
     etat.fichierCourant = f;
     $('titre-apercu').textContent = f.nom;
     const zone = $('contenu-apercu');
-    while (zone.firstChild) zone.removeChild(zone.firstChild);
+    vider(zone);
+    detruireEditeur();
+    $('apercu-enregistrer').hidden = true;
+    $('apercu-enregistrer').disabled = true;
+    $('pied-apercu').hidden = true;
+    $('pied-apercu').textContent = '';
+    $('apercu-telecharger').href = API + '/api/files/' + f.id + '/download';
 
-    const estImage = f.type.startsWith('image/');
-    const estPdf = f.type === 'application/pdf';
-    if (!estImage && !estPdf) {
-      zone.textContent = 'Aperçu non disponible pour ce type.';
+    const url = API + '/api/files/' + f.id + '/content';
+    const kind = classerFichier(f);
+
+    if (kind === 'image') {
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = 'Aperçu de ' + f.nom;
+      zone.appendChild(img);
+    } else if (kind === 'video') {
+      const v = document.createElement('video');
+      v.controls = true;
+      v.src = url;
+      v.className = 'media-apercu';
+      zone.appendChild(v);
+    } else if (kind === 'audio') {
+      const a = document.createElement('audio');
+      a.controls = true;
+      a.src = url;
+      a.className = 'audio-apercu';
+      zone.appendChild(a);
+    } else if (kind === 'pdf') {
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.title = 'Aperçu PDF de ' + f.nom;
+      zone.appendChild(iframe);
+    } else if (kind === 'code') {
+      ouvrirEditeur(f, url);
     } else {
-      // On récupère le binaire via l'API (cookie de session inclus) :
-      // l'URL Airtable expire, le Worker régénère un lien frais à chaque fois.
-      zone.textContent = 'Chargement…';
-      fetch(API + '/api/files/' + f.id + '/preview', { credentials: API ? 'include' : 'same-origin' })
-        .then(function (r) {
-          if (!r.ok) throw new Error('Aperçu indisponible.');
-          return r.blob();
-        })
-        .then(function (blob) {
-          const url = URL.createObjectURL(blob);
-          while (zone.firstChild) zone.removeChild(zone.firstChild);
-          if (estImage) {
-            const img = document.createElement('img');
-            img.src = url;
-            img.alt = 'Aperçu de ' + f.nom;
-            zone.appendChild(img);
-          } else {
-            const iframe = document.createElement('iframe');
-            iframe.src = url;
-            iframe.title = 'Aperçu PDF de ' + f.nom;
-            zone.appendChild(iframe);
-          }
-          const lienDl = $('apercu-telecharger');
-          lienDl.href = API + '/api/files/' + f.id + '/download';
-        })
-        .catch(function (err) {
-          zone.textContent = err.message;
-        });
+      const p = document.createElement('p');
+      p.className = 'apercu-indispo';
+      p.textContent = "Aperçu non disponible pour ce type de fichier. Utilise « Télécharger ».";
+      zone.appendChild(p);
     }
-    $('apercu-telecharger').setAttribute('href', API + '/api/files/' + f.id + '/download');
     ouvrirModale('modale-apercu');
   }
 
+  async function ouvrirEditeur(f, url) {
+    const zone = $('contenu-apercu');
+    zone.textContent = "Chargement de l'éditeur…";
+    try {
+      const texte = await fetch(url, { credentials: credentials() }).then(function (r) {
+        if (!r.ok) throw new Error('Lecture impossible.');
+        return r.text();
+      });
+      await chargerMonaco();
+      vider(zone);
+      const hote = document.createElement('div');
+      hote.className = 'monaco-hote';
+      zone.appendChild(hote);
+      const sombre = document.documentElement.getAttribute('data-theme') === 'sombre';
+      etat.editeur = window.monaco.editor.create(hote, {
+        value: texte,
+        language: langueDe(f.nom),
+        theme: sombre ? 'vs-dark' : 'vs-light',
+        automaticLayout: true,
+        fontSize: 14,
+        minimap: { enabled: true },
+        scrollBeyondLastLine: false,
+        tabSize: 2,
+        renderWhitespace: 'selection'
+      });
+      etat.texteOriginal = texte;
+      const taille = octetsDe(texte);
+      const btn = $('apercu-enregistrer');
+      const trop = taille > MAX_OCTETS;
+      btn.hidden = trop;
+      btn.disabled = true;
+      const pied = $('pied-apercu');
+      pied.hidden = false;
+      pied.textContent = 'Langage : ' + langueDe(f.nom) + ' · ' + formaterTaille(taille) +
+        (trop ? ' — trop volumineux pour être édité en ligne.' : '');
+      etat.editeur.onDidChangeModelContent(function () {
+        btn.disabled = etat.editeur.getValue() === etat.texteOriginal;
+      });
+    } catch (err) {
+      zone.textContent = err.message || 'Aperçu indisponible.';
+    }
+  }
+
+  $('apercu-enregistrer').addEventListener('click', async function () {
+    if (!etat.editeur || !etat.fichierCourant) return;
+    const btn = $('apercu-enregistrer');
+    btn.disabled = true;
+    const texte = etat.editeur.getValue();
+    try {
+      const r = await fetch(API + '/api/files/' + etat.fichierCourant.id + '/content', {
+        method: 'PUT',
+        credentials: credentials(),
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        body: texte
+      });
+      const data = await r.json().catch(function () { return {}; });
+      if (!r.ok) throw new Error(data.error || 'Enregistrement impossible.');
+      etat.texteOriginal = texte;
+      window.GC_toast('Fichier enregistré.', 'succes');
+      chargerFichiers();
+    } catch (err) {
+      btn.disabled = false;
+      window.GC_toast(err.message, 'erreur');
+    }
+  });
+
+  $('apercu-partager').addEventListener('click', function () {
+    if (etat.fichierCourant) ouvrirPartage(etat.fichierCourant);
+  });
+
   // ═════════ Partage ═════════
+
+  function libelleExpiration(p) {
+    if (p.expire) return 'Expiré / révoqué' + (p.expireLe ? ' — ' + formaterDate(p.expireLe) : '');
+    if (!p.expireLe) return "N'expire jamais";
+    return 'Expire le ' + formaterDate(p.expireLe);
+  }
 
   function ouvrirPartage(f) {
     etat.fichierCourant = f;
@@ -592,7 +773,7 @@
   async function chargerPartagesModale() {
     if (!etat.fichierCourant) return;
     const zone = $('liste-partages-modale');
-    while (zone.firstChild) zone.removeChild(zone.firstChild);
+    vider(zone);
     try {
       const data = await api('/api/shares');
       const miens = data.partages.filter(function (p) { return p.fileId === etat.fichierCourant.id; });
@@ -608,7 +789,7 @@
         item.className = 'item-partage';
         const texte = document.createElement('span');
         texte.className = p.expire ? 'mort' : '';
-        texte.textContent = p.expire ? 'Expiré / révoqué — ' + formaterDate(p.expireLe) : 'Expire le ' + formaterDate(p.expireLe);
+        texte.textContent = libelleExpiration(p);
         item.appendChild(texte);
         if (!p.expire) {
           const btn = document.createElement('button');
@@ -635,10 +816,12 @@
 
   $('creer-partage').addEventListener('click', async function () {
     if (!etat.fichierCourant) return;
+    const valeur = $('input-expiration').value;
+    const heures = valeur === 'jamais' ? 'jamais' : Number(valeur);
     try {
       const data = await api('/api/shares', {
         method: 'POST',
-        body: { fileId: etat.fichierCourant.id, heures: Number($('input-expiration').value) }
+        body: { fileId: etat.fichierCourant.id, heures: heures }
       });
       $('texte-lien').textContent = data.partage.url;
       $('lien-cree').hidden = false;
@@ -662,7 +845,7 @@
   // ═════════ Vues partages / corbeille ═════════
 
   function rendreListePartages(partages, zone) {
-    while (zone.firstChild) zone.removeChild(zone.firstChild);
+    vider(zone);
     if (partages.length === 0) {
       const p = document.createElement('p');
       p.className = 'vide';
@@ -678,7 +861,7 @@
       const tdNom = document.createElement('td');
       tdNom.textContent = p.nom;
       const tdExpire = document.createElement('td');
-      tdExpire.textContent = p.expire ? 'inactif' : formaterDate(p.expireLe);
+      tdExpire.textContent = p.expire ? 'inactif' : (p.expireLe ? formaterDate(p.expireLe) : "n'expire jamais");
       const tdAction = document.createElement('td');
       tdAction.style.textAlign = 'right';
       if (!p.expire) {
@@ -708,7 +891,8 @@
 
   function rendreListeCorbeille(fichiers) {
     const zone = $('liste-corbeille');
-    while (zone.firstChild) zone.removeChild(zone.firstChild);
+    vider(zone);
+    $('btn-vider-corbeille').disabled = fichiers.length === 0;
     if (fichiers.length === 0) {
       const p = document.createElement('div');
       p.className = 'vide';
@@ -733,11 +917,14 @@
       tdDate.textContent = 'supprimé le ' + formaterDate(f.supprimeLe);
       const tdAction = document.createElement('td');
       tdAction.style.textAlign = 'right';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'btn btn-bleu btn-petit';
-      btn.textContent = 'Restaurer';
-      btn.addEventListener('click', async function () {
+      const groupe = document.createElement('div');
+      groupe.className = 'actions-ligne';
+
+      const btnRestaurer = document.createElement('button');
+      btnRestaurer.type = 'button';
+      btnRestaurer.className = 'btn btn-bleu btn-petit';
+      btnRestaurer.textContent = 'Restaurer';
+      btnRestaurer.addEventListener('click', async function () {
         try {
           await api('/api/files/' + f.id + '/restore', { method: 'POST' });
           window.GC_toast('Restauré.', 'succes');
@@ -747,7 +934,32 @@
           window.GC_toast(err.message, 'erreur');
         }
       });
-      tdAction.appendChild(btn);
+
+      const btnDefinitif = document.createElement('button');
+      btnDefinitif.type = 'button';
+      btnDefinitif.className = 'btn btn-danger btn-petit';
+      btnDefinitif.textContent = 'Supprimer définitivement';
+      btnDefinitif.addEventListener('click', function () {
+        demanderConfirmation(
+          'Supprimer définitivement ?',
+          '« ' + f.nom + ' » sera effacé pour de bon. Cette action est irréversible.',
+          'Supprimer pour de bon',
+          async function () {
+            try {
+              await api('/api/files/' + f.id + '?definitif=1', { method: 'DELETE' });
+              window.GC_toast('Supprimé définitivement.', 'succes');
+              chargerCorbeille();
+              chargerQuota();
+            } catch (err) {
+              window.GC_toast(err.message, 'erreur');
+            }
+          }
+        );
+      });
+
+      groupe.appendChild(btnRestaurer);
+      groupe.appendChild(btnDefinitif);
+      tdAction.appendChild(groupe);
       tr.appendChild(tdNom);
       tr.appendChild(tdDate);
       tr.appendChild(tdAction);
@@ -757,12 +969,156 @@
     zone.appendChild(table);
   }
 
+  $('btn-vider-corbeille').addEventListener('click', function () {
+    demanderConfirmation(
+      'Vider la corbeille ?',
+      'Tous les éléments de la corbeille seront effacés définitivement. Action irréversible.',
+      'Tout supprimer',
+      async function () {
+        try {
+          const r = await api('/api/trash/vider', { method: 'POST' });
+          window.GC_toast((r.supprimes || 0) + ' élément(s) supprimé(s) définitivement.', 'succes');
+          chargerCorbeille();
+          chargerQuota();
+        } catch (err) {
+          window.GC_toast(err.message, 'erreur');
+        }
+      }
+    );
+  });
+
+  // ═════════ Paramètres : profil ═════════
+
+  async function chargerParametres() {
+    rafraichirControlesApparence();
+    try {
+      const me = await api('/api/auth/me');
+      etat.moi = me;
+      $('param-email').value = me.email;
+      const quota = etat.quota || await api('/api/quota');
+      etat.quota = quota;
+      const ul = $('meta-compte');
+      vider(ul);
+      [
+        ['Compte créé le', formaterDate(me.createdAt)],
+        ['E-mail', me.email],
+        ['Espace utilisé', formaterTaille(quota.utiliseOctets) + ' / ' + formaterTaille(quota.quotaOctets) + ' (' + quota.pourcentage + ' %)']
+      ].forEach(function (paire) {
+        const li = document.createElement('li');
+        const fort = document.createElement('strong');
+        fort.textContent = paire[0] + ' : ';
+        li.appendChild(fort);
+        li.appendChild(document.createTextNode(paire[1]));
+        ul.appendChild(li);
+      });
+    } catch (err) {
+      if (err.message !== 'SESSION_EXPIREE') window.GC_toast(err.message, 'erreur');
+    }
+  }
+
+  $('btn-maj-email').addEventListener('click', async function () {
+    const email = $('param-email').value.trim();
+    if (!email) return;
+    try {
+      const r = await api('/api/auth/me', { method: 'PATCH', body: { email: email } });
+      window.GC_toast('E-mail mis à jour.', 'succes');
+      $('email-user').textContent = r.email;
+      chargerParametres();
+    } catch (err) {
+      window.GC_toast(err.message, 'erreur');
+    }
+  });
+
+  $('btn-maj-pass').addEventListener('click', async function () {
+    const actuel = $('param-pass-actuel').value;
+    const nouveau = $('param-pass-nouveau').value;
+    if (!actuel || !nouveau) {
+      window.GC_toast('Renseigne le mot de passe actuel et le nouveau.', 'erreur');
+      return;
+    }
+    try {
+      await api('/api/auth/password', { method: 'POST', body: { actuel: actuel, nouveau: nouveau } });
+      $('param-pass-actuel').value = '';
+      $('param-pass-nouveau').value = '';
+      window.GC_toast('Mot de passe changé.', 'succes');
+    } catch (err) {
+      window.GC_toast(err.message, 'erreur');
+    }
+  });
+
+  // ═════════ Paramètres : apparence ═════════
+
+  function rafraichirControlesApparence() {
+    const o = window.GC_apparence.lire();
+    $('param-mode').value = o.mode;
+    $('param-accent').value = o.accent;
+    $('param-accent-hex').value = o.accent;
+    $('param-fond').value = o.fond;
+    $('param-radius').value = o.radius;
+    $('param-radius-val').textContent = o.radius;
+    construireNuancier();
+    majApercuApparence();
+  }
+
+  function appliquerApparence(modif) {
+    window.GC_apparence.appliquer(modif);
+    rafraichirControlesApparence();
+    if (etat.editeur) {
+      try {
+        etat.editeur.updateOptions({ theme: document.documentElement.getAttribute('data-theme') === 'sombre' ? 'vs-dark' : 'vs-light' });
+      } catch { /* éditeur fermé */ }
+    }
+  }
+
+  function construireNuancier() {
+    const zone = $('nuancier');
+    vider(zone);
+    const accent = window.GC_apparence.lire().accent.toLowerCase();
+    window.GC_apparence.presets.forEach(function (c) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pastille-couleur' + (c.toLowerCase() === accent ? ' actif' : '');
+      b.style.background = c;
+      b.title = c;
+      b.setAttribute('aria-label', 'Couleur ' + c);
+      b.addEventListener('click', function () { appliquerApparence({ accent: c }); });
+      zone.appendChild(b);
+    });
+  }
+
+  function majApercuApparence() {
+    const o = window.GC_apparence.lire();
+    const zone = $('apercu-apparence');
+    if (!zone) return;
+    const pastille = zone.querySelector('.pastille');
+    if (pastille) pastille.style.background = o.accent;
+    const lien = zone.querySelector('.lien-demo');
+    if (lien) lien.style.color = o.accent;
+  }
+
+  $('param-mode').addEventListener('change', function (e) { appliquerApparence({ mode: e.target.value }); });
+  $('param-fond').addEventListener('change', function (e) { appliquerApparence({ fond: e.target.value }); });
+  $('param-radius').addEventListener('input', function (e) {
+    $('param-radius-val').textContent = e.target.value;
+    appliquerApparence({ radius: Number(e.target.value) });
+  });
+  $('param-accent').addEventListener('input', function (e) { appliquerApparence({ accent: e.target.value }); });
+  $('param-accent-hex').addEventListener('change', function (e) {
+    let v = e.target.value.trim();
+    if (v && v[0] !== '#') v = '#' + v;
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) appliquerApparence({ accent: v });
+    else { e.target.value = window.GC_apparence.lire().accent; window.GC_toast('Couleur invalide (ex. #0000f2).', 'erreur'); }
+  });
+  $('btn-reset-apparence').addEventListener('click', function () {
+    window.GC_apparence.reinitialiser();
+    rafraichirControlesApparence();
+    window.GC_toast('Design réinitialisé.', 'succes');
+  });
+
   // ═════════ Déconnexion ═════════
 
   async function deconnecter() {
-    try {
-      await api('/api/auth/logout', { method: 'POST' });
-    } catch { /* même en cas d'erreur, on renvoie vers la page de login */ }
+    try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* on redirige quand même */ }
     window.location.href = 'login.html';
   }
   $('btn-deconnexion').addEventListener('click', deconnecter);
@@ -772,17 +1128,17 @@
   // ═════════ Démarrage ═════════
 
   (async function demarrer() {
-    // Récupère la vraie limite d'upload exposée par le serveur.
     try {
-      const sante = await fetch(API + '/api/health', { credentials: API ? 'include' : 'same-origin' })
+      const sante = await fetch(API + '/api/health', { credentials: credentials() })
         .then(function (r) { return r.json(); });
       if (sante && sante.maxFichierOctets) MAX_OCTETS = sante.maxFichierOctets;
-    } catch { /* la valeur par défaut reste 5 Mo */ }
+    } catch { /* valeur par défaut */ }
     if (zoneDepot) zoneDepot.textContent = texteZoneDepot();
     try {
       const me = await api('/api/auth/me');
+      etat.moi = me;
       $('email-user').textContent = me.email;
-    } catch { /* redirection login déjà lancée par api() */ }
+    } catch { /* redirection login déjà lancée */ }
     rendreFilAriane();
     activerVue('fichiers');
   })();
