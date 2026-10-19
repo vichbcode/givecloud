@@ -459,7 +459,7 @@ async function fichierProprio(env, utilisateur, id) {
   if (!/^rec[\w]{14,}$/.test(id || '')) return null; // ID Airtable invalide
   const { record, erreur } = await atLire(env, env.FILES_TABLE, id);
   if (erreur) return null;
-  const proprietaire = (record.fields.proprietaire || [])[0];
+  const proprietaire = record.fields.proprietaire;
   if (proprietaire !== utilisateur.id) return null; // IDOR bloqué ici
   return record;
 }
@@ -548,7 +548,6 @@ async function handlerRegister(request, env) {
     passwordHash: hash,
     salt: sel,
     iterations: PBKDF2_ITERATIONS,
-    createdAt: new Date().toISOString(),
     quotaMo: Number(env.QUOTA_MO_DEFAULT) || 100
   });
   if (erreur) {
@@ -701,7 +700,7 @@ async function handlerUpload(request, env, utilisateur) {
     chemin,
     taille: fichier.size,
     type: mimeType,
-    proprietaire: [utilisateur.id]
+    proprietaire: utilisateur.id
   });
   if (erreur) {
     return json(request, env, { error: message || 'Enregistrement impossible.' }, statutDepuisAirtable(erreur));
@@ -880,7 +879,7 @@ async function handlerCreerDossier(request, env, utilisateur) {
     chemin: cheminDossier,
     taille: 0,
     type: TYPE_DOSSIER,
-    proprietaire: [utilisateur.id]
+    proprietaire: utilisateur.id
   });
   if (erreur) {
     return json(request, env, { error: message || 'Création impossible.' }, statutDepuisAirtable(erreur));
@@ -905,7 +904,7 @@ async function handlerCreerPartage(request, env, utilisateur, origine) {
   const expireLe = new Date(Date.now() + duree * 3600_000).toISOString();
   const { record, erreur, message } = await atCreer(env, env.SHARES_TABLE, {
     token,
-    fichier: [fileId],
+    fichier: fileId,
     expireLe,
     revoque: false
   });
@@ -926,7 +925,7 @@ async function handlerCreerPartage(request, env, utilisateur, origine) {
 async function handlerListerPartages(request, env, utilisateur) {
   // 1) les IDs des fichiers de l'utilisateur (max ~1000 sur le plan gratuit)
   const fichiers = await atLister(env, env.FILES_TABLE, {
-    filtre: `{propriotaire}='${echapperFormule(utilisateur.id)}'`
+    filtre: `{proprietaire}='${echapperFormule(utilisateur.id)}'`
   });
   const idsFichiers = (fichiers.records || []).map((r) => r.id);
   const nomsFichiers = new Map((fichiers.records || []).map((r) => [r.id, r.fields.nom]));
@@ -939,7 +938,7 @@ async function handlerListerPartages(request, env, utilisateur) {
     const { records, erreur } = await atLister(env, env.SHARES_TABLE, { filtre: `OR(${ou})` });
     if (erreur) return json(request, env, { error: 'Erreur.' }, statutDepuisAirtable(erreur));
     for (const r of records || []) {
-      const idFichier = (r.fields.fichier || [])[0];
+      const idFichier = r.fields.fichier;
       partages.push({
         id: r.id,
         token: r.fields.token,
@@ -957,7 +956,7 @@ async function handlerListerPartages(request, env, utilisateur) {
 async function handlerRevoquerPartage(request, env, utilisateur, id) {
   const { record, erreur } = await atLire(env, env.SHARES_TABLE, id);
   if (erreur) return json(request, env, { error: 'Partage introuvable.' }, 404);
-  const idFichier = (record.fields.fichier || [])[0];
+  const idFichier = record.fields.fichier;
   // Anti-IDOR : le partage doit pointer vers un fichier de l'utilisateur.
   const fichier = idFichier ? await fichierProprio(env, utilisateur, idFichier) : null;
   if (!fichier) return json(request, env, { error: 'Partage introuvable.' }, 404);
@@ -982,7 +981,7 @@ async function handlerLienPublic(request, env, token) {
   if (!expireLe || Date.parse(expireLe) < Date.now()) {
     return json(request, env, { error: 'Ce lien a expiré.' }, 410);
   }
-  const idFichier = (partage.fields.fichier || [])[0];
+  const idFichier = partage.fields.fichier;
   if (!idFichier) return json(request, env, { error: 'Fichier introuvable.' }, 404);
   const { record: fichier, erreur: errFichier } = await atLire(env, env.FILES_TABLE, idFichier);
   if (errFichier || fichier.fields.supprimeLe) {
@@ -1010,13 +1009,13 @@ async function routerApi(request, env, url, ctx) {
   }
 
   // ── Routes publiques ──
-  if (chemine === '/api/health' && methode === 'GET') {
+  if (chemin === '/api/health' && methode === 'GET') {
     return json(request, env, { ok: true, service: 'givecloud-api' });
   }
-  if (chemine === '/api/auth/register' && methode === 'POST') return handlerRegister(request, env);
-  if (chemine === '/api/auth/login' && methode === 'POST') return handlerLogin(request, env);
-  if (chemine === '/api/auth/logout' && methode === 'POST') return handlerLogout(request, env);
-  if (chemine.startsWith('/s/') && methode === 'GET') {
+  if (chemin === '/api/auth/register' && methode === 'POST') return handlerRegister(request, env);
+  if (chemin === '/api/auth/login' && methode === 'POST') return handlerLogin(request, env);
+  if (chemin === '/api/auth/logout' && methode === 'POST') return handlerLogout(request, env);
+  if (chemin.startsWith('/s/') && methode === 'GET') {
     return handlerLienPublic(request, env, chemin.slice(3));
   }
 
@@ -1027,14 +1026,14 @@ async function routerApi(request, env, url, ctx) {
     return json(request, env, { error: 'Session expirée ou absente.' }, 401);
   }
 
-  if (chemine === '/api/auth/me' && methode === 'GET') return handlerMe(request, env, utilisateur);
-  if (chemine === '/api/quota' && methode === 'GET') return handlerQuota(request, env, utilisateur);
-  if (chemine === '/api/files' && methode === 'GET') return handlerListerFichiers(request, env, utilisateur, url, ctx);
-  if (chemine === '/api/files/upload' && methode === 'POST') return handlerUpload(request, env, utilisateur);
-  if (chemine === '/api/trash' && methode === 'GET') return handlerCorbeille(request, env, utilisateur);
-  if (chemine === '/api/folders' && methode === 'POST') return handlerCreerDossier(request, env, utilisateur);
-  if (chemine === '/api/shares' && methode === 'GET') return handlerListerPartages(request, env, utilisateur);
-  if (chemine === '/api/shares' && methode === 'POST') return handlerCreerPartage(request, env, utilisateur, origine);
+  if (chemin === '/api/auth/me' && methode === 'GET') return handlerMe(request, env, utilisateur);
+  if (chemin === '/api/quota' && methode === 'GET') return handlerQuota(request, env, utilisateur);
+  if (chemin === '/api/files' && methode === 'GET') return handlerListerFichiers(request, env, utilisateur, url, ctx);
+  if (chemin === '/api/files/upload' && methode === 'POST') return handlerUpload(request, env, utilisateur);
+  if (chemin === '/api/trash' && methode === 'GET') return handlerCorbeille(request, env, utilisateur);
+  if (chemin === '/api/folders' && methode === 'POST') return handlerCreerDossier(request, env, utilisateur);
+  if (chemin === '/api/shares' && methode === 'GET') return handlerListerPartages(request, env, utilisateur);
+  if (chemin === '/api/shares' && methode === 'POST') return handlerCreerPartage(request, env, utilisateur, origine);
 
   // Routes avec ID
   let m = chemin.match(/^\/api\/files\/(rec[\w]+)\/download$/);

@@ -4,7 +4,7 @@
   "buildCommand": null,
   "outputDirectory": "frontend",
   "functions": {
-    "api/[[...path]].js": {
+    "api/*.js": {
       "maxDuration": 30,
       "memory": 512
     }

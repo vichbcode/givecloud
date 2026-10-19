@@ -26,7 +26,7 @@ GiveCloud/
 ├── README.md                  # ce guide
 ├── vercel.json                # config Vercel (statique frontend/ + fonction api/)
 ├── api/
-│   └── [[...path]].js         # fonction serverless : adapte req/res → lib/app.js
+│   └── [...path].js           # fonction serverless : adapte req/res → lib/app.js
 ├── lib/
 │   └── app.js                 # TOUTE l'API : auth, files, shares, proxy Airtable
 ├── frontend/                  # front statique servi par Vercel
@@ -81,7 +81,7 @@ GiveCloud/
    | + | `passwordHash` | Single line text | — |
    | + | `salt` | Single line text | — |
    | + | `iterations` | Number | Format: Integer |
-   | + | `createdAt` | Date | Include time: **oui** |
+   | + | `createdAt` | Created time | — (rempli automatiquement) |
    | + | `quotaMo` | Number | Format: Integer, Default: `100` |
 
 5. Clique sur **+ Add or import → Create empty table**, nomme-la `Files` :
@@ -92,7 +92,7 @@ GiveCloud/
    | + | `chemin` | Single line text | — |
    | + | `taille` | Number | Format: Integer (octets) |
    | + | `type` | Single line text | — |
-   | + | `proprietaire` | Link to another record | Table: **Users**, allow linking to: **1 record** |
+   | + | `proprietaire` | Single line text | — (ID du record Users) |
    | + | `fichier` | Attachment | — |
    | + | `supprimeLe` | Date | Include time: **oui** (vide = fichier actif) |
 
@@ -101,7 +101,7 @@ GiveCloud/
    | Champ | Nom exact | Type exact | Réglages |
    |---|---|---|---|
    | ✔ (principal) | `token` | Single line text | — |
-   | + | `fichier` | Link to another record | Table: **Files**, allow linking to: **1 record** |
+   | + | `fichier` | Single line text | — (ID du record Files) |
    | + | `expireLe` | Date | Include time: **oui** |
    | + | `revoque` | Checkbox | — |
 
