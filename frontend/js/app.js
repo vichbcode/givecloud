@@ -22,6 +22,7 @@
     quota: null,
     moi: null,
     editeur: null,            // instance Monaco courante
+    lecteur: null,            // lecteur média (vidéo/audio) courant
     texteOriginal: null
   };
 
@@ -96,13 +97,13 @@
   document.querySelectorAll('.modale-fond').forEach(function (fond) {
     fond.addEventListener('click', function (e) {
       if (e.target === fond) {
-        if (fond.id === 'modale-apercu') detruireEditeur();
+        if (fond.id === 'modale-apercu') { detruireEditeur(); detruireLecteur(); }
         fond.classList.remove('visible');
       }
     });
     fond.querySelectorAll('[data-fermer]').forEach(function (b) {
       b.addEventListener('click', function () {
-        if (fond.id === 'modale-apercu') detruireEditeur();
+        if (fond.id === 'modale-apercu') { detruireEditeur(); detruireLecteur(); }
         fond.classList.remove('visible');
       });
     });
@@ -110,7 +111,7 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
       document.querySelectorAll('.modale-fond.visible').forEach(function (m) {
-        if (m.id === 'modale-apercu') detruireEditeur();
+        if (m.id === 'modale-apercu') { detruireEditeur(); detruireLecteur(); }
         m.classList.remove('visible');
       });
     }
@@ -250,12 +251,20 @@
 
   const EXT_CODE = new Set([
     'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'vue', 'svelte', 'json', 'jsonc', 'json5',
-    'html', 'htm', 'xml', 'css', 'scss', 'sass', 'less', 'styl', 'md', 'markdown',
+    'html', 'htm', 'xml', 'css', 'scss', 'sass', 'less', 'styl', 'md', 'markdown', 'mdx',
     'txt', 'log', 'csv', 'tsv', 'yml', 'yaml', 'ini', 'env', 'conf', 'cfg', 'toml',
-    'sql', 'graphql', 'gql', 'sh', 'bash', 'zsh', 'bat', 'ps1', 'py', 'pyw', 'rb',
+    'sql', 'graphql', 'gql', 'graphqls', 'sh', 'bash', 'zsh', 'bat', 'ps1', 'py', 'pyw', 'rb',
     'php', 'pl', 'lua', 'r', 'go', 'rs', 'java', 'kt', 'kts', 'scala', 'swift',
     'c', 'h', 'cpp', 'hpp', 'cc', 'hh', 'cs', 'm', 'mm', 'dart', 'diff', 'patch',
-    'dockerfile', 'makefile', 'cmake', 'gradle', 'properties', 'tex', 'srt', 'vtt'
+    'dockerfile', 'makefile', 'cmake', 'meson', 'gradle', 'properties', 'tex', 'bib', 'sty',
+    'srt', 'vtt', 'rst', 'adoc', 'asciidoc', 'org', 'wiki', 'rmd',
+    'fs', 'fsx', 'fsi', 'ml', 'mli', 'hs', 'lhs', 'erl', 'hrl', 'ex', 'exs',
+    'clj', 'cljs', 'cljc', 'edn', 'coffee', 'litcoffee', 'pas', 'pp', 'f', 'f90', 'f95', 'for',
+    'asm', 's', 'sol', 'proto', 'thrift', 'hbs', 'handlebars', 'twig', 'liquid', 'mustache',
+    'ejs', 'pug', 'jade', 'tcl', 'jl', 'nim', 'cr', 'v', 'sv', 'svh', 'vhd', 'vhdl',
+    'abap', 'apex', 'cls', 'd', 'elm', 'flow', 'jsp', 'asp', 'aspx', 'cshtml', 'vbhtml',
+    'sas', 'st', 'sml', 'rkt', 'scm', 'lisp', 'el', 'groovy', 'ipynb', 'raml', 'xaml',
+    'cake', 'csx', 'fx', 'wxi', 'wxs', 'wxl', 'scheme', 'yaml', 'preset', 'rest'
   ]);
 
   function extension(nom) {
@@ -264,6 +273,17 @@
     const i = n.lastIndexOf('.');
     return i > 0 ? n.slice(i + 1) : '';
   }
+
+  const EXT_VIDEO = new Set([
+    'mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'flv', 'f4v', 'mpg', 'mpeg',
+    'mpe', 'm2v', 'ts', 'mts', 'm2ts', '3gp', '3g2', 'ogv', 'vob', 'rm', 'rmvb',
+    'asf', 'divx', 'mxf', 'ogm'
+  ]);
+  const EXT_AUDIO = new Set([
+    'mp3', 'wav', 'wave', 'flac', 'aac', 'm4a', 'm4b', 'oga', 'ogg', 'opus', 'wma',
+    'aiff', 'aif', 'aifc', 'alac', 'ape', 'wv', 'mpc', 'mka', 'ac3', 'eac3', 'dts',
+    'amr', 'au', 'mid', 'midi', 'ra', 'caf', '3ga'
+  ]);
 
   function estTexteOuCode(f) {
     const t = f.type || '';
@@ -274,10 +294,14 @@
 
   function classerFichier(f) {
     const t = f.type || '';
+    const ext = extension(f.nom);
     if (t.startsWith('image/')) return 'image';
     if (t.startsWith('video/')) return 'video';
     if (t.startsWith('audio/')) return 'audio';
-    if (t === 'application/pdf') return 'pdf';
+    if (t === 'application/pdf' || ext === 'pdf') return 'pdf';
+    // Repli par extension quand le MIME est absent (application/octet-stream).
+    if (EXT_VIDEO.has(ext)) return 'video';
+    if (EXT_AUDIO.has(ext)) return 'audio';
     if (estTexteOuCode(f)) return 'code';
     return 'autre';
   }
@@ -315,22 +339,47 @@
     return promesseMonaco;
   }
 
-  const LANG_MONACO = {
-    js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
-    ts: 'typescript', tsx: 'typescript', json: 'json', jsonc: 'json', json5: 'json',
-    html: 'html', htm: 'html', xml: 'xml', svg: 'xml', css: 'css', scss: 'scss', sass: 'scss', less: 'less',
-    md: 'markdown', markdown: 'markdown', yml: 'yaml', yaml: 'yaml', ini: 'ini', toml: 'ini',
-    sql: 'sql', graphql: 'graphql', gql: 'graphql', sh: 'shell', bash: 'shell', zsh: 'shell',
-    bat: 'bat', ps1: 'powershell', py: 'python', pyw: 'python', rb: 'ruby', php: 'php',
-    lua: 'lua', r: 'r', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', kts: 'kotlin',
-    scala: 'scala', swift: 'swift', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cc: 'cpp',
-    hh: 'cpp', cs: 'csharp', dart: 'dart', dockerfile: 'dockerfile', makefile: 'makefile',
-    vue: 'html', svelte: 'html', txt: 'plaintext', log: 'plaintext', csv: 'plaintext',
-    tsx_: 'typescript'
+  // Langages : la table est construite depuis Monaco lui-même (extensions ET noms
+  // de fichiers) pour couvrir TOUS les langages qu'il embarque, sans liste figée.
+  let tableLangues = null;
+
+  function construireTableLangues() {
+    const parExt = new Map();
+    const parNom = new Map();
+    if (window.monaco && window.monaco.languages) {
+      window.monaco.languages.getLanguages().forEach(function (l) {
+        (l.extensions || []).forEach(function (e) {
+          parExt.set(String(e).replace(/^\./, '').toLowerCase(), l.id);
+        });
+        (l.filenames || []).forEach(function (n) { parNom.set(String(n).toLowerCase(), l.id); });
+        (l.aliases || []).forEach(function (a) { parNom.set(String(a).toLowerCase(), l.id); });
+      });
+    }
+    return { parExt: parExt, parNom: parNom };
+  }
+
+  // Repli minimal tant que Monaco n'est pas chargé (icônes, aperçu de dossier…).
+  const LANG_REPLI = {
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript',
+    json: 'json', html: 'html', htm: 'html', xml: 'xml', svg: 'xml', css: 'css', scss: 'scss',
+    less: 'less', md: 'markdown', markdown: 'markdown', yml: 'yaml', yaml: 'yaml', ini: 'ini',
+    toml: 'ini', sql: 'sql', graphql: 'graphql', sh: 'shell', bash: 'shell', zsh: 'shell',
+    bat: 'bat', ps1: 'powershell', py: 'python', rb: 'ruby', php: 'php', lua: 'lua', r: 'r',
+    go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', swift: 'swift', c: 'c', h: 'c',
+    cpp: 'cpp', hpp: 'cpp', cs: 'csharp', dart: 'dart', dockerfile: 'dockerfile',
+    makefile: 'makefile', txt: 'plaintext', log: 'plaintext', csv: 'plaintext'
   };
 
   function langueDe(nom) {
-    return LANG_MONACO[extension(nom)] || 'plaintext';
+    const base = String(nom || '').toLowerCase();
+    if (window.monaco && window.monaco.languages) {
+      if (!tableLangues) tableLangues = construireTableLangues();
+      const parNom = tableLangues.parNom.get(base);
+      if (parNom) return parNom;
+      const parExt = tableLangues.parExt.get(extension(base));
+      if (parExt) return parExt;
+    }
+    return LANG_REPLI[extension(base)] || 'plaintext';
   }
 
   function detruireEditeur() {
@@ -339,6 +388,13 @@
       etat.editeur = null;
     }
     etat.texteOriginal = null;
+  }
+
+  function detruireLecteur() {
+    if (etat.lecteur && typeof etat.lecteur.gcDetruire === 'function') {
+      try { etat.lecteur.gcDetruire(); } catch { /* déjà détruit */ }
+    }
+    etat.lecteur = null;
   }
 
   // ═════════ Rendu de la liste ═════════
@@ -642,6 +698,7 @@
     const zone = $('contenu-apercu');
     vider(zone);
     detruireEditeur();
+    detruireLecteur();
     $('apercu-enregistrer').hidden = true;
     $('apercu-enregistrer').disabled = true;
     $('pied-apercu').hidden = true;
@@ -656,6 +713,9 @@
       img.src = url;
       img.alt = 'Aperçu de ' + f.nom;
       zone.appendChild(img);
+    } else if ((kind === 'video' || kind === 'audio') && window.GC_lecteur) {
+      etat.lecteur = window.GC_lecteur.creer(kind, url, f.nom);
+      zone.appendChild(etat.lecteur);
     } else if (kind === 'video') {
       const v = document.createElement('video');
       v.controls = true;

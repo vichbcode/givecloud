@@ -424,6 +424,35 @@ function extensionInterdite(nom) {
   return EXT_INTERDITES.has(extensionDe(nom));
 }
 
+// Types MIME déduits de l'extension quand le navigateur n'en fournit pas.
+// Indispensable pour que la lecture native (vidéo/audio) fonctionne.
+const MIME_PAR_EXT = {
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mkv': 'video/x-matroska', '.webm': 'video/webm',
+  '.mov': 'video/quicktime', '.avi': 'video/x-msvideo', '.wmv': 'video/x-ms-wmv',
+  '.flv': 'video/x-flv', '.f4v': 'video/mp4', '.mpg': 'video/mpeg', '.mpeg': 'video/mpeg',
+  '.m2v': 'video/mpeg', '.ts': 'video/mp2t', '.mts': 'video/mp2t', '.m2ts': 'video/mp2t',
+  '.3gp': 'video/3gpp', '.3g2': 'video/3gpp2', '.ogv': 'video/ogg', '.vob': 'video/dvd',
+  '.mxf': 'application/mxf', '.asf': 'video/x-ms-asf', '.divx': 'video/x-msvideo',
+  '.rm': 'application/vnd.rn-realmedia', '.ogm': 'video/ogg',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.wave': 'audio/wav', '.flac': 'audio/flac',
+  '.aac': 'audio/aac', '.m4a': 'audio/mp4', '.m4b': 'audio/mp4', '.oga': 'audio/ogg',
+  '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wma': 'audio/x-ms-wma', '.aiff': 'audio/aiff',
+  '.aif': 'audio/aiff', '.alac': 'audio/mp4', '.ape': 'audio/x-ape', '.wv': 'audio/x-wavpack',
+  '.mpc': 'audio/x-musepack', '.mka': 'audio/x-matroska', '.ac3': 'audio/ac3',
+  '.eac3': 'audio/eac3', '.dts': 'audio/vnd.dts', '.amr': 'audio/amr', '.au': 'audio/basic',
+  '.mid': 'audio/midi', '.midi': 'audio/midi', '.ra': 'audio/x-realaudio', '.caf': 'audio/x-caf',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.tiff': 'image/tiff',
+  '.tif': 'image/tiff', '.avif': 'image/avif', '.ico': 'image/x-icon'
+};
+
+/** Devine le type MIME depuis le nom si le navigateur n'en a pas fourni de valable. */
+function mimeDepuisNom(nom, fourni) {
+  const t = String(fourni || '').trim();
+  if (t && t !== 'application/octet-stream') return t;
+  return MIME_PAR_EXT[extensionDe(nom)] || t || 'application/octet-stream';
+}
+
 /**
  * Normalise un chemin de dossier : "/photos/2026" → segments propres.
  * Interdit "..", vide, et les caractères dangereux (anti-injection de formule Airtable).
@@ -777,11 +806,11 @@ async function handlerUpload(request, env, utilisateur) {
   // ── Validation 2 : extension interdite ──
   const nom = assainirNom(fichier.name);
   if (extensionInterdite(nom)) {
-    return json(request, env, { error: 'Type de fichier non autorisé (exécutables et pages web bloqués).' }, 415);
+    return json(request, env, { error: 'Type de fichier non autorisé (exécutables bloqués).' }, 415);
   }
   // ── Validation 3 : MIME (si le navigateur envoie un type actif, on force l'octet-stream) ──
-  let mimeType = fichier.type || 'application/octet-stream';
-  if (mimeType.startsWith('text/html') || mimeType === 'application/x-msdownload') {
+  let mimeType = mimeDepuisNom(nom, fichier.type);
+  if (mimeType === 'application/x-msdownload') {
     return json(request, env, { error: 'Type de fichier non autorisé.' }, 415);
   }
   // ── Validation 4 : quota utilisateur ──

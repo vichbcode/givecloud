@@ -38,6 +38,7 @@ GiveCloud/
 │   └── js/
 │       ├── config.js          # URL de l'API (vide = même origine)
 │       ├── theme.js           # apparence (mode clair/sombre, accent, arrondis, fond) + toasts
+│       ├── lecteur.js         # lecteur média type VLC (vidéo/audio, sous-titres, ffmpeg.wasm)
 │       ├── landing.js         # animations vitrine, onglets, thème
 │       ├── auth.js            # page login
 │       └── app.js             # logique du cloud (upload, liste, dossiers, visionneuse, éditeur, paramètres…)
@@ -287,7 +288,9 @@ Ouvre les DevTools (F12) pendant tous les tests.
 - [x] Rate limiting dédié sur le changement de mot de passe (5 essais / 10 min / IP)
 - [x] Front : `textContent` uniquement pour les données utilisateur (anti-XSS),
       `innerHTML` interdit sur données dynamiques
-- [x] CSP stricte en `<meta>` sur les pages HTML
+- [x] Lecteur média : médias servis en `inline` sous CSP `sandbox` ; conversion
+      de codecs via ffmpeg.wasm (chargé depuis le CDN, jamais de code tiers exécuté en direct)
+- [x] CSP stricte en `<meta>` sur les pages HTML (`media-src 'self' blob:` pour le lecteur)
 
 # Limites honnêtes de la solution
 
@@ -324,3 +327,9 @@ Ouvre les DevTools (F12) pendant tous les tests.
     que des conventions affichées, pas des capacités réelles. Pour du vrai gros stockage
     il faudrait un stockage objet (Cloudflare R2, Vercel Blob, AWS S3) à la place des
     pièces jointes Airtable — c'est une refonte de la couche d'upload.
+11. **Lecture des codecs exotiques (AC3, DTS, HEVC, MKV…)** : le lecteur tente d'abord
+    la lecture native du navigateur. Si le codec n'est pas pris en charge, il propose
+    de convertir le fichier à la volée avec **ffmpeg.wasm** (téléchargé depuis le CDN,
+    ~30 Mo la première fois, mis en cache). C'est lent et gourmand en mémoire : sur ce
+    projet les fichiers font ≤ 3 Mo, donc ça reste utilisable, mais ce n'est pas
+    instantané comme VLC. Certains formats très rares peuvent échouer malgré tout.

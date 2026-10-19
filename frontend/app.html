@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0000f2">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; child-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; child-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
   <meta name="robots" content="noindex">
   <title>Mon cloud — GiveCloud</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -273,7 +273,7 @@
       <div class="entete-apercu">
         <h2 id="titre-apercu">Aperçu</h2>
         <div class="outils-apercu">
-          <button class="btn btn-bleu btn-petit" type="button" id="apercu-enregistrer" hidden>💾 Enregistrer</button>
+          <button class="btn btn-bleu btn-petit" type="button" id="apercu-enregistrer" hidden>Enregistrer</button>
           <a class="btn btn-contour btn-petit" id="apercu-telecharger" href="#" download>Télécharger</a>
           <button class="btn btn-contour btn-petit" type="button" id="apercu-partager">Partager</button>
           <button class="btn btn-contour btn-petit" type="button" data-fermer>Fermer</button>
@@ -300,6 +300,7 @@
 
   <script src="js/theme.js" defer></script>
   <script src="js/config.js" defer></script>
+  <script src="js/lecteur.js" defer></script>
   <script src="js/app.js" defer></script>
 </body>
 </html>
