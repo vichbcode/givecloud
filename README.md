@@ -26,7 +26,7 @@ GiveCloud/
 ├── README.md                  # ce guide
 ├── vercel.json                # config Vercel (statique frontend/ + fonction api/)
 ├── api/
-│   └── [...path].js           # fonction serverless : adapte req/res → lib/app.js
+│   └── index.js               # fonction serverless : adapte req/res → lib/app.js
 ├── lib/
 │   └── app.js                 # TOUTE l'API : auth, files, shares, proxy Airtable
 ├── frontend/                  # front statique servi par Vercel
