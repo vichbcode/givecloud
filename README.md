@@ -1,20 +1,28 @@
 # GiveCloud
 
-Un cloud de stockage multi-utilisateurs qui utilise **Airtable** comme base de données
-et stockage de pièces jointes. Front 100 % statique (HTML/CSS/JS vanilla), API sécurisée
-en **fonction serverless Vercel**. Couleur principale : le bleu électrique `#0000f2`.
+Un cloud de stockage multi-utilisateurs. Front 100 % statique (HTML/CSS/JS vanilla),
+API sécurisée en **fonction serverless Vercel**, métadonnées en **Cloudflare D1** (base
+SQL), fichiers en **Cloudflare R2** (stockage objet S3, egress gratuit). Couleur
+principale : le bleu électrique `#0000f2`.
 
 ```
-Navigateur (front statique) ──► Vercel (statique + API serverless) ──► Airtable
+                    ┌──► Vercel (front statique + API serverless : auth, métadonnées)
+Navigateur ─────────┤
+                    └──► Cloudflare R2 (upload / téléchargement DIRECT, URL signées)
+
+Vercel (API) ───► Cloudflare D1 (SQL : users, files, shares)
 ```
 
-**Pourquoi cette architecture est obligatoire ?**
-1. Le token Airtable a un accès complet à la base : s'il était dans le front, n'importe
-   qui pourrait le voler (code source, onglet Réseau) et lire/effacer toute la base.
-2. Le front ne peut pas faire de hachage de mot de passe fiable, de rate limiting, ni
-   de validation serveur : tout ça vit dans la fonction serveur, où le code est secret.
-3. Airtable ne peut pas servir de backend d'authentification (pas de comptes, pas de
-   sessions) : l'API est le cerveau, Airtable n'est que le disque dur.
+**Pourquoi cette architecture ?**
+1. Les identifiants R2/D1 ont un accès complet aux données : ils vivent uniquement dans
+   les variables d'environnement Vercel, jamais dans le front (code source, onglet Réseau).
+2. Le hachage de mot de passe (PBKDF2-SHA256, 210 000 itérations), le rate limiting et la
+   validation serveur exigent du CPU. L'API reste donc sur **Vercel** (Node) : les
+   Cloudflare Workers gratuits plafonnent à **10 ms de CPU** par requête, ce qui casserait
+   l'authentification.
+3. Les octets des fichiers ne transitent **jamais** par Vercel : le serveur signe une URL,
+   le navigateur envoie/lit directement sur R2. Pas de limite de taille serverless, pas de
+   bande passante consommée.
 
 ---
 
@@ -24,11 +32,15 @@ Navigateur (front statique) ──► Vercel (statique + API serverless) ──�
 GiveCloud/
 ├── .gitignore                 # exclut tous les secrets
 ├── README.md                  # ce guide
-├── vercel.json                # config Vercel (statique frontend/ + fonction api/)
+├── vercel.json                # config Vercel (statique frontend/ + fonction api/ + en-têtes)
+├── db/
+│   └── schema.sql             # schéma D1 (tables users, files, shares + index)
 ├── api/
 │   └── index.js               # fonction serverless : adapte req/res → lib/app.js
 ├── lib/
-│   └── app.js                 # TOUTE l'API : auth, files, shares, proxy Airtable
+│   ├── app.js                 # TOUTE l'API : auth, fichiers, dossiers, corbeille, partages
+│   ├── db.js                  # client D1 (API REST) + ORM + requêtes métier
+│   └── r2.js                  # signature SigV4 R2 (URLs pré-signées, sans npm)
 ├── frontend/                  # front statique servi par Vercel
 │   ├── index.html             # page vitrine
 │   ├── login.html             # connexion / inscription
@@ -37,234 +49,185 @@ GiveCloud/
 │   │   └── style.css          # design system bleu, mode sombre, responsive
 │   └── js/
 │       ├── config.js          # URL de l'API (vide = même origine)
-│       ├── theme.js           # apparence (mode clair/sombre, accent, arrondis, fond) + toasts
+│       ├── theme.js           # apparence (clair/sombre, accent, arrondis, fond) + toasts
 │       ├── lecteur.js         # lecteur média type VLC (vidéo/audio, sous-titres, ffmpeg.wasm)
 │       ├── landing.js         # animations vitrine, onglets, thème
 │       ├── auth.js            # page login
-│       └── app.js             # logique du cloud (upload, liste, dossiers, visionneuse, éditeur, paramètres…)
-└── worker/                    # ALTERNATIVE Cloudflare (optionnelle, même logique)
+│       └── app.js             # logique du cloud (upload direct R2, liste, dossiers, visionneuse…)
+└── worker/                    # ANCIENNE version Cloudflare Workers (Airtable) — obsolète, conservée pour référence
     ├── wrangler.toml
     └── src/index.js
 ```
 
-> **Hébergement** : le déploiement principal est **GitHub (code) + Vercel (site + API)**.
-> Le dossier `worker/` est une alternative si tu préfères Cloudflare Workers ;
-> la logique métier y est dupliquée dans `worker/src/index.js`.
+> **Hébergement** : déploiement **GitHub (code) + Vercel (site + API) + Cloudflare (D1 + R2)**.
+> Le dossier `worker/` est l'ancienne implémentation (Airtable) — plus synchronisée, à ignorer.
 
 ---
 
-## Chiffres Airtable à connaître (vérifiés sur la doc officielle, oct. 2026)
+## Chiffres Cloudflare / Vercel à connaître (plans gratuits, oct. 2026)
 
-| Limite | Valeur | Conséquence dans GiveCloud |
+| Service | Limite | Conséquence dans GiveCloud |
 |---|---|---|
-| Upload pièce jointe par l'API | **5 Mo max** par fichier | Bloqué côté front ET côté serveur (413) — **3 Mo effectifs sur Vercel** (limite de 4,5 Mo du corps de requête, base64 inclus) |
-| Rate limit API | **5 requêtes/s par base** (50/s par token toutes bases) | L'API retry automatiquement sur 429 (back-off) |
-| Appels API — plan gratuit | **1 000 / mois par workspace** | Dépassé → 30 jours de grâce, puis 429 bloquants jusqu'au 1er du mois suivant |
-| Enregistrements — plan gratuit | **1 000 / base** (cumulé entre tables) | plein → plus d'ajout possible, jamais de suppression auto, message d'erreur généré par Airtable (422) |
-| Stockage pièces jointes — plan gratuit | **1 Go / base** | plein → plus d'upload possible, données jamais supprimées, il faut upgrader |
-| Pagination API | 100 enregistrements / page | l'API pagine automatiquement |
+| **R2** — stockage | **10 Go** gratuits puis 0,015 $/Go/mois | Les fichiers vivent ici. Au-delà de 10 Go, facturation à l'usage réel. |
+| **R2** — egress | **0 $** (gratuit, toujours) | Téléchargement/streaming illimité en coût — c'est l'avantage clé vs Drive/S3. |
+| **R2** — opérations | **1 M Class A** (écritures) + **10 M Class B** (lectures)/mois | Très large pour un usage perso/associatif. |
+| **D1** — stockage | **5 Go** | Les métadonnées (noms, chemins, tailles) sont minuscules : jamais un problème. |
+| **D1** — débit | **5 M lignes lues/jour**, **100 k lignes écrites/jour** | Suffisant pour des milliers d'utilisateurs. |
+| **Vercel** — fonctions | Hobby : durée limitée, corps de requête ~4,5 Mo | **Aucun octet de fichier n'y passe** (upload direct R2) ⇒ la limite ne s'applique pas. |
+| **Cloudflare Workers** | **10 ms CPU** (gratuit) | L'API n'y tourne **pas** (PBKDF2 trop coûteux) — Vercel uniquement. |
+
+> **Quota par utilisateur** : `20480 Mo` (20 Go) par défaut, **fichier max 1 Go**.
+> Ce sont des conventions appliquées par le serveur (compteur en base D1) ; le stockage
+> physique réel est celui de R2, partagé par tous les comptes.
 
 ---
 
 # GUIDE PAS À PAS — ce que TU dois faire à la main
 
-## Étape 1 — Créer le compte Airtable, la base et les tables
+## Étape 1 — R2 : le bucket de stockage + CORS
 
-1. Va sur <https://airtable.com/signup> et crée un compte gratuit.
-2. Crée un workspace nommé **GiveCloud**.
-3. Dans ce workspace : **+ Add another base → Start from scratch**, nomme-la **GiveCloud**.
-4. La base contient une table `Table1`. Renomme-la : clic droit sur l'onglet →
-   **Rename** → `Users`. Supprime toutes les colonnes sauf la première (champ principal) :
+1. Crée un compte sur <https://dash.cloudflare.com/sign-up> (gratuit).
+2. Menu **R2** → **Create bucket**. Nom : `givecloud`. Région : *Automatic*.
+   - ⚠️ L'activation de R2 demande en général d'ajouter une **carte bancaire**.
+     Le plan gratuit couvre 10 Go : tant que tu restes dessous, **rien n'est débité**.
+3. Note ton **Account ID** : barre latérale → **R2** → *Account details* (ou dans l'URL du dashboard).
+4. **CORS** (indispensable : upload/lecture directe depuis le navigateur) : bucket
+   `givecloud` → onglet **Settings** → *CORS Policy* → **Add CORS policy** → colle :
 
-   | Champ principal (ouvre le premier) | Nom exact | Type exact | Réglages |
-   |---|---|---|---|
-   | ✔ (colonne A) | `email` | Single line text | — |
-   | + | `passwordHash` | Single line text | — |
-   | + | `salt` | Single line text | — |
-   | + | `iterations` | Number | Format: Integer |
-   | + | `createdAt` | Created time | — (rempli automatiquement) |
-   | + | `quotaMo` | Number | Format: Integer, Default: `23552` (23 Go) |
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://ton-projet.vercel.app"],
+       "AllowedMethods": ["GET", "PUT", "HEAD"],
+       "AllowedHeaders": ["Content-Type"],
+       "ExposeHeaders": ["ETag"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
 
-5. Clique sur **+ Add or import → Create empty table**, nomme-la `Files` :
+   Remplace `ton-projet.vercel.app` par ton domaine final (tu peux aussi mettre `"*"`
+   pendant les tests, mais **restreins-le ensuite**).
 
-   | Champ | Nom exact | Type exact | Réglages |
-   |---|---|---|---|
-   | ✔ (principal) | `nom` | Single line text | — |
-   | + | `chemin` | Single line text | — |
-   | + | `taille` | Number | Format: Integer (octets) |
-   | + | `type` | Single line text | — |
-   | + | `proprietaire` | Single line text | — (ID du record Users) |
-   | + | `fichier` | Attachment | — |
-   | + | `supprimeLe` | Date | Include time: **oui** (vide = fichier actif) |
+5. **Clé d'accès S3** (pour signer les URLs) : **R2** → **Manage R2 API Tokens** →
+   **Create API token** → nom `givecloud-api` → permissions **Object Read & Write** →
+   (optionnel) limite au bucket `givecloud` → **Create**.
+   **Copie immédiatement** : *Access Key ID* et *Secret Access Key* (affichés une seule fois).
 
-6. Ajoute une 3ᵉ table **+ Add or import → Create empty table**, nomme-la `Shares` :
+## Étape 2 — D1 : la base de données
 
-   | Champ | Nom exact | Type exact | Réglages |
-   |---|---|---|---|
-   | ✔ (principal) | `token` | Single line text | — |
-   | + | `fichier` | Single line text | — (ID du record Files) |
-   | + | `expireLe` | Date | Include time: **oui** |
-   | + | `revoque` | Checkbox | — |
+1. Menu **Workers & Pages** → onglet **D1** → **Create database**. Nom : `givecloud`.
+2. **Applique le schéma** (crée les tables). Deux options :
 
-7. **Si tout va bien** : tu vois 3 onglets `Users`, `Files`, `Shares`, tables vides,
-   aucun message d'erreur. **Si un type est grisant/invalide** : vérifie le type dans
-   le menu déroulant du champ (clic sur le nom de la colonne → Change field type).
+   **A. Tableau de bord** : ouvre la base → onglet **Console** → colle le contenu de
+   `db/schema.sql` puis exécute.
 
-> Les noms de champs sont **sensibles à la casse** : `passwordHash` et pas `passwordhash`.
-> Le code du Worker utilise ces noms exacts (modifiables dans `wrangler.toml`).
+   **B. Ligne de commande** (recommandé) :
+   ```powershell
+   npx wrangler d1 execute givecloud --remote --file=./db/schema.sql
+   ```
 
-## Étape 2 — Token personnel Airtable + ID de la base
+3. Note le **Database ID** : base `givecloud` → visible dans *Settings* (UUID du type
+   `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
 
-1. Va sur <https://airtable.com/create/tokens> → **Create personal access token**.
-2. Nom : `givecloud-worker`.
-3. **Scopes** → Add a scope → cherche et coche **exactement** :
-   - `data.records:read`
-   - `data.records:write`
-   (inutile d'en ajouter d'autres — c'est le principe des permissions minimales ;
-   le Worker lit/écrit les records et upload les pièces jointes, rien de plus).
-4. **Access** → **+ Add a base** → **Select specific base** → **GiveCloud**
-   (jamais « All workspaces » : le token ne doit voir qu'une seule base).
-5. **Create token** → cople-le **immédiatement** (affiché une seule fois) dans un
-   gestionnaire de mots de passe. Ce token ne doit JAMAIS être commité ni collé dans le front.
-6. Récupère l'**ID de la base** : ouvre ta base GiveCloud → regarde l'URL du navigateur :
-   `https://airtable.com/appABC123XYZ...` → l'ID est la partie qui commence par **`app`**
-   (ex. `appABC123XYZ`). Copie-le aussi.
-7. *(Facultatif)* Les **IDs de tables** (`tbl...`) ne sont pas nécessaires : le Worker
-   utilise les **noms** de tables (`Users`, `Files`, `Shares`).
+## Étape 3 — Token API Cloudflare (accès D1 depuis Vercel)
 
-**Si ça échoue au moment des tests** : token invalide → 401 dans les logs du Worker ;
-base incorrecte → 404 `MODEL_NOT_FOUND`. Vérifie scope et base assignée dans
-<https://airtable.com/create/tokens>.
+L'API Vercel lit/écrit D1 via l'API REST Cloudflare ; il faut un token dédié.
 
-## Étape 3 — Node.js, GitHub
+1. <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** → **Custom token**.
+2. **Permissions** → ajoute : **Account** → **D1** → **Edit**.
+3. **Account resources** → **Include** → **ton compte**.
+4. **Create Token** → copie la valeur (affichée une seule fois).
+
+## Étape 4 — Node.js, GitHub
 
 1. Installe **Node.js LTS** (≥ 20) : <https://nodejs.org> → version LTS. Vérifie :
    ```powershell
-   node -v    # doit afficher v20.x ou v22.x
+   node -v    # v20.x, v22.x ou v24.x
    npm -v
    ```
 2. Installe **Git** : <https://git-scm.com/download/win> (options par défaut).
-   Vérifie : `git --version`
-3. Crée un compte sur <https://github.com> (gratuit).
-4. Prépare le dépôt local (depuis la racine du projet, le dossier `GiveCloud`) :
-   ```powershell
-   cd "D:\00 GiveCloud"
-   git init
-   git add .
-   git commit -m "GiveCloud — cloud Airtable + API Vercel"
-   ```
-   **Si tout va bien** : `git status` affiche « nothing to commit » et le
-   `.gitignore` a bien exclu tout fichier sensible (vérifie qu'aucun `.env`,
-   `.dev.vars` n'est listé par `git ls-files`).
-5. Sur GitHub : **+ → New repository** → nom `givecloud` → **Private** (recommandé)
-   → **Create repository**, puis colle les 3 commandes affichées :
+3. Sur GitHub : **+ → New repository** → nom `givecloud` → **Private** → **Create**.
+4. Depuis la racine du projet :
    ```powershell
    git remote add origin https://github.com/<ton-pseudo>/givecloud.git
    git branch -M main
    git push -u origin main
    ```
-**Si le push échoue** : GitHub te demande un mot de passe → utilise un
-**Personal Access Token** (github.com → Settings → Developer settings → Tokens)
-ou installe **GitHub Desktop** qui gère l'authentification pour toi.
+   **Si le push échoue** : crée un **Personal Access Token** GitHub (Settings → Developer
+   settings → Tokens) ou utilise **GitHub Desktop**.
 
-## Étape 4 — Compte Vercel + import du projet
+## Étape 5 — Vercel : import + variables d'environnement
 
-1. Crée un compte sur <https://vercel.com> (gratuit) → **Continue with GitHub**
-   (autorise l'accès au repo `givecloud`).
-2. Dashboard → **Add New… → Project** → dans *Import Git Repository*, sélectionne
-   `givecloud` → **Import**.
-3. Dans l'écran de configuration, **ne change rien** :
-   - Framework Preset : **Other**
-   - Build Command : *(vide)*
-   - Output Directory : `frontend` (déjà lu depuis `vercel.json`)
-4. **AVANT de cliquer Deploy** : ajoute les variables d'environnement
-   (onglet *Environment Variables*) :
+1. Compte sur <https://vercel.com> → **Continue with GitHub** (autorise le repo `givecloud`).
+2. **Add New… → Project** → importe `givecloud`.
+3. **Ne change rien** : Framework Preset **Other**, Build Command *(vide)*,
+   Output Directory `frontend` (déjà lu dans `vercel.json`).
+4. **AVANT de cliquer Deploy** → *Environment Variables* :
 
-   | Nom | Valeur |
-   |---|---|
-   | `AIRTABLE_TOKEN` | le token pat de l'étape 2 |
-   | `BASE_ID` | `appXXXXXXXX` |
-   | `SESSION_SECRET` | généré par : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+   | Nom | Valeur | Où la trouver |
+   |---|---|---|
+   | `CLOUDFLARE_ACCOUNT_ID` | ton Account ID | étape 1.3 |
+   | `CLOUDFLARE_API_TOKEN` | token D1 Edit | étape 3 |
+   | `D1_DATABASE_ID` | UUID de la base | étape 2.3 |
+   | `R2_BUCKET` | `givecloud` | étape 1.2 |
+   | `R2_ACCESS_KEY_ID` | Access Key ID | étape 1.5 |
+   | `R2_SECRET_ACCESS_KEY` | Secret Access Key | étape 1.5 |
+   | `SESSION_SECRET` | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | à générer |
 
-   (Optionnelles : `QUOTA_MO_DEFAULT=23552` — quota par défaut d'un nouveau
-   compte, en Mo (23 Go). Les noms de tables ont des valeurs par défaut
-   `Users` / `Files` / `Shares`.)
-5. Clique **Deploy**.
-   **Si tout va bien** : après ~30 s, Vercel affiche « Congratulations! » et te
-   donne une URL du type `https://givecloud-xxxx.vercel.app`. Ouvre
-   `https://givecloud-xxxx.vercel.app/api/health` → `{"ok":true,"service":"givecloud-api",...}`.
-   **Si erreur « Configuration serveur incomplète »** : une des 3 variables manque
-   → reviens dans Settings → Environment Variables, vérifie les noms (majuscules),
-   puis **Redeploy**.
-   **Si erreur de build** : onglet Deployments → clic sur le déploiement raté →
-   *Building Logs* → l'erreur s'affiche ; en principe tout est validé dans ce dépôt.
-6. **Ne commite JAMAIS les valeurs** : elles vivent uniquement dans Vercel
-   (Settings → Environment Variables). Le `.gitignore` protège déjà les fichiers locaux.
+   *(Optionnelles : `R2_ACCOUNT_ID` si ton compte R2 diffère du compte Cloudflare,
+   `QUOTA_MO_DEFAULT` — quota par défaut en Mo.)*
 
-## Étape 5 — Mise à jour automatique
+5. **Deploy**. **Si tout va bien** : ~30 s plus tard, ouvre
+   `https://ton-projet.vercel.app/api/health` → `{"ok":true,"service":"givecloud-api",...}`.
+   **Si « Configuration serveur incomplète »** : une variable manque → vérifie les noms
+   (majuscules), ajoute-la, puis **Redeploy**.
 
-À chaque `git push` sur `main`, Vercel redéploie automatiquement le site **et**
-l'API. Ouvre l'URL Vercel : la vitrine apparaît, « Commencer » mène à l'inscription.
-Front et API sont sur la **même origine** (`*.vercel.app`) → cookies
-`SameSite=Strict` fonctionnent, pas de CORS, pas de configuration `API_BASE`.
+## Étape 6 — Mise à jour automatique
 
-**Si le front charge mais la page est vide** : F12 → onglet *Console* →
-une erreur CSP ou 404 ? Vérifie que `frontend/js/config.js` contient bien
-`API_BASE: ''`.
+Chaque `git push` sur `main` redéploie le site **et** l'API. Front et API sont sur la
+**même origine** (`*.vercel.app`) → cookies `SameSite=Strict` OK, pas de CORS.
+**Si le front charge mais la page est vide** : F12 → *Console* → vérifie que
+`frontend/js/config.js` contient bien `API_BASE: ''`.
 
-**Domaine custom (optionnel)** : Vercel → Project → Settings → Domains →
-ajoute ton domaine, puis suis le CNAME/ALIAS chez ton registrar.
+**Domaine custom (optionnel)** : Vercel → Settings → Domains → ajoute ton domaine ;
+pense à **mettre à jour le CORS R2** avec ce nouveau domaine.
 
-## Étape 6 — Tests de sécurité à faire TOI-MÊME
+## Étape 7 — Tests de sécurité à faire TOI-MÊME
 
 Ouvre les DevTools (F12) pendant tous les tests.
 
-1. **Anti-IDOR** : crée 2 comptes (A et B). Connecte-toi en A, upload un fichier, copie
-   son ID (visible dans la réponse `GET /api/files` → onglet Réseau). Déconnecte-toi,
-   connecte-toi en B, ouvre `fetch('/api/files/<ID_A>/download')` dans
-   la console → tu dois recevoir **404/403**, jamais le fichier.
-   Idem avec l'URL de partage d'un fichier supprimé/ révoqué.
-2. **Token Airtable absent du front** : F12 → onglet *Sources* + *Réseau* : aucun `pat`,
-   aucune URL `api.airtable.com`, aucun `app...` n'apparaît. Teste aussi `curl` sur le
-   serveur avec une route inexistante : le message d'erreur ne reflète jamais l'airtable token.
-3. **Cookie HttpOnly** : F12 → *Application* → *Cookies* → le cookie `gc_session` doit
-   afficher **HttpOnly** ✔, **Secure** ✔, **SameSite=Strict**. Dans la console,
-   `document.cookie` doit renvoyer **une chaîne vide** (le jeton n'est jamais lisible en JS).
-4. **Brute-force** : rate-limit 5 tentatives / 10 min sur login/register — échoue 6 fois
-   volontairement → 429 "Trop de tentatives." avec le même message d'erreur générique.
-   (Attention : en serverless, chaque instance a sa limite — testée plusieurs fois
-   d'affilée, tu tomberas sur la même instance et le 429 arrivera.)
-5. **Upload dangereux** : essaie d'envoyer un `.exe`, un `.bat`, un `.ps1`, un `.dll`
-   → 415 bloqué, côté front ET côté serveur (testé aussi via `fetch` en curl pour
-   contourner le front). Les fichiers de **code** (`.js`, `.py`, `.html`…) sont
-   autorisés : ils ne sont jamais exécutés (téléchargement en `attachment`, aperçu
-   servi en `inline` mais sous CSP `sandbox`), et uniquement éditables dans Monaco.
-6. **Taille** : essaie un fichier de 4 Mo → 413 côté front (barre d'erreur) et côté
-   serveur (teste avec curl pour prouver la validation serveur).
-7. **XSS** : renomme un fichier en `<img src=x onerror=alert(1)>` → le nom s'affiche
-   en texte brut dans la liste (aucune exécution). Vérifie aussi le partage.
-8. **HSTS / en-têtes** : `curl -I https://ton-projet.vercel.app/` → présences de
-   `strict-transport-security`, `x-content-type-options: nosniff`,
-   `referrer-policy`.
-9. **Corbeille** : supprime un fichier → il part dans la corbeille (champ `supprimeLe`),
-   restaure-le, vérifie qu'aucun autre utilisateur ne le voit.
-10. **Partage** : crée un lien avec expiration 1 h, ouvre-le en navigation privée
-    (sans cookies) → il fonctionne ; clique "Révoquer" → rechargement en navigation
-    privée → lien mort. Crée un lien « **Jamais** » → il ne doit jamais expirer.
-11. **Profil** : change ton e-mail dans Paramètres → la session reste valide (cookie
-    re-signé) ; re-connecte-toi avec le nouvel e-mail. Change ton mot de passe → un
-    ancien mot de passe doit être refusé, et le nouveau accepté (sel + hash neufs).
-12. **Corbeille — suppression définitive** : supprime un fichier, puis dans la corbeille
-    clique « Supprimer définitivement » (ou « Vider la corbeille ») → le record disparaît
-    réellement d'Airtable (et non plus seulement masqué).
-13. **Éditeur** : ouvre un `.js`/`.txt`, modifie le contenu, clique « Enregistrer » →
-    recharge le fichier (l'éditeur affiche la nouvelle version, la taille est mise à jour).
+1. **Anti-IDOR** : crée 2 comptes (A et B). En A, upload un fichier, note son ID
+   (`GET /api/files`). En B, ouvre `fetch('/api/files/<ID_A>/download')` dans la console
+   → **404/403**, jamais le fichier. Idem avec un lien de partage révoqué/supprimé.
+2. **Secrets absents du front** : onglets *Sources* + *Réseau* → aucun `r2.cloudflarestorage.com`
+   en tant qu'appel authentifié côté serveur, aucune clé, aucun token. Les URLs R2 visibles
+   sont **pré-signées et éphémères** (c'est normal et attendu).
+3. **Cookie HttpOnly** : *Application* → *Cookies* → `gc_session` doit être **HttpOnly** ✓,
+   **Secure** ✓, **SameSite=Strict**. `document.cookie` dans la console → chaîne vide.
+4. **Brute-force** : rate-limit 5 essais / 10 min sur login/register — échoue 6 fois →
+   `429 Trop de tentatives.` (message générique).
+5. **Upload dangereux** : `.exe`, `.bat`, `.ps1`, `.dll` → 415 bloqué côté front **et**
+   serveur. Le **code** (`.js`, `.py`, `.html`…) est autorisé : jamais exécuté
+   (téléchargement en `attachment`, aperçu sous CSP `sandbox`).
+6. **Taille** : un fichier > 1 Go → refusé. Vérifie aussi la validation serveur via `curl`.
+7. **Quota** : remplis jusqu'au quota ou modifie-le en base → l'API refuse (413/507).
+8. **XSS** : renomme un fichier `<img src=x onerror=alert(1)>` → affiché en texte brut.
+9. **HSTS / en-têtes** : `curl -I https://ton-projet.vercel.app/` →
+   `strict-transport-security`, `x-content-type-options: nosniff`, `referrer-policy`.
+10. **Corbeille** : supprime → corbeille (`supprimeLe`), restaure ; « Supprimer
+    définitivement » supprime aussi l'**objet R2** (plus seulement la ligne D1).
+11. **Partage** : lien 1 h en navigation privée → marche ; « Révoquer » → lien mort ;
+    lien « **Jamais** » → ne doit jamais expirer.
+12. **Profil** : change d'e-mail (session re-signée) ; change de mot de passe
+    (ancien refusé, nouveau accepté, sel + hash neufs).
+13. **Éditeur** : modifie un `.js`/`.txt`, « Enregistrer » → recharge (contenu + taille à jour).
 
 ---
 
 # Checklist de sécurité
 
-- [x] Token Airtable uniquement en variables d'environnement Vercel, jamais dans le front ni Git
+- [x] Secrets R2/D1/token uniquement en variables d'environnement Vercel, jamais dans le front ni Git
 - [x] `.gitignore` couvre `.env`, `.dev.vars`, `.vercel/`, secrets
 - [x] Mots de passe hachés PBKDF2-SHA256, 210 000 itérations, sel unique 16 octets
 - [x] Changement de mot de passe : ancien vérifié, sel + hash régénérés
@@ -274,62 +237,48 @@ Ouvre les DevTools (F12) pendant tous les tests.
 - [x] Aucun jeton en localStorage ni dans le DOM
 - [x] Vérification propriétaire sur CHAQUE route fichier (anti-IDOR)
 - [x] Rate limiting login/register : 5 essais / 10 min / IP + messages génériques
-- [x] CORS limité à `ALLOWED_ORIGIN` (vide = même origine)
+- [x] CORS limité à `ALLOWED_ORIGIN` (vide = même origine) ; CORS R2 restreint au domaine du site
 - [x] En-têtes : X-Content-Type-Options, Referrer-Policy, HSTS, X-Frame-Options,
       Permissions-Policy sur toutes les pages (via vercel.json) + toutes les réponses API
-- [x] Validation serveur : taille ≤ 3 Mo (plafond Vercel), extension bloquée
-      (exécutables natifs uniquement — le code éditable est autorisé)
-- [x] Téléchargement toujours servi avec `Content-Disposition: attachment`
+- [x] Validation serveur : taille ≤ 1 Go par fichier, extension bloquée (exécutables natifs)
+- [x] Requêtes D1 **préparées** (liaison de paramètres) — aucune concaténation SQL
+- [x] URLs R2 **pré-signées** à durée courte (upload 1 h, download 5 min), jamais stockées
+- [x] Téléchargement forcé en `Content-Disposition: attachment` (via R2 `response-content-disposition`)
 - [x] Aperçu / visionneuse / éditeur servis en `inline` sous CSP `sandbox`
       + `X-Content-Type-Options: nosniff` (aucune exécution possible)
-- [x] URLs d'attachments Airtable régénérées à chaque téléchargement, jamais stockées
-- [x] Retry automatique sur 429 (back-off exponentiel, 4 essais)
-- [x] Purge de la corbeille après 30 jours ; suppression définitive sur demande
+- [x] Retry automatique sur 429/5xx D1 (back-off, 3 essais)
+- [x] Purge de la corbeille après 30 jours ; suppression définitive (ligne D1 **et** objet R2)
 - [x] Rate limiting dédié sur le changement de mot de passe (5 essais / 10 min / IP)
-- [x] Front : `textContent` uniquement pour les données utilisateur (anti-XSS),
-      `innerHTML` interdit sur données dynamiques
-- [x] Lecteur média : médias servis en `inline` sous CSP `sandbox` ; conversion
-      de codecs via ffmpeg.wasm (chargé depuis le CDN, jamais de code tiers exécuté en direct)
+- [x] Front : `textContent` uniquement pour les données utilisateur (anti-XSS)
+- [x] Lecteur média : médias `inline` sous CSP `sandbox` ; conversion via ffmpeg.wasm (CDN)
 - [x] CSP stricte en `<meta>` sur les pages HTML (`media-src 'self' blob:` pour le lecteur)
 
 # Limites honnêtes de la solution
 
-1. **Upload plafonné à 3 Mo sur Vercel** : Airtable accepte 5 Mo, mais les
-   fonctions serverless Vercel limitent le corps de requête à ~4,5 Mo (base64
-   inclus ⇒ +33 %). Le front affiche la vraie limite récupérée sur `/api/health`.
-2. **Rate limiting en mémoire** : les compteurs vivent dans l'instance serverless
-   et repartent à zéro au cold start ou quand Vercel en lance une nouvelle. Un
-   attaquant patient peut contourner. Solution pro : Upstash Redis ou Vercel KV.
-3. **JWT sans révocation** : un jeton volé reste valide jusqu'à 7 jours (sauf si on
-   change `SESSION_SECRET`, ce qui déconnecte tout le monde). Solution pro : liste
-   de révocation en base.
-4. **Plan gratuit Airtable = 1 000 appels API/mois** : très vite atteint en usage
-   réel (chaque page de liste = 1+ appel). 30 jours de grâce puis blocage total.
-   En pratique il faut un plan Team (100 000 appels/mois) pour un usage sérieux.
-5. **1 Go de stockage et 1 000 enregistrements/base** en gratuit : ~ quelques centaines
-   de fichiers max, partagés par tous les utilisateurs. Les quotas par utilisateur
-   (23 Go par défaut) sont une convention interne, **pas** une isolation physique : le
-   stockage réel reste celui d'Airtable (1 Go en gratuit).
-6. **Proxy de téléchargement** : le serveur streamme les fichiers (3 Mo max), ce qui
-   compte dans la bande passante et la durée d'exécution de la fonction Vercel
-   (maxDuration = 30 s configuré).
-7. **Pas de chiffrement au repos côté Airtable** : les fichiers sont chez Airtable,
-   protégés par leur sécurité à eux (TLS en transit, chiffrement chez eux au repos).
-   GiveCloud ne peut pas promettre le zéro-knowledge.
-8. **Suppression = corbeille logique** : le fichier reste dans Airtable (champ
-   `supprimeLe`) pendant 30 jours ; la purge physique est faite par le serveur
-   à ta première liste suivante. Tant que personne ne visite, rien n'est purgé.
-9. **Plan Hobby Vercel** : fonctions serverless limitées (durée, instances) —
-   très largement suffisant pour un usage perso, à upgrader pour un vrai service.
-10. **Fichiers de 1 Go impossibles avec Airtable** : l'API d'Airtable plafonne chaque
-    pièce jointe à 5 Mo, et Vercel limite le corps de requête à ~4,5 Mo. Les limites
-    demandées « 1 Go par fichier » et « 23 Go par utilisateur » ne peuvent donc être
-    que des conventions affichées, pas des capacités réelles. Pour du vrai gros stockage
-    il faudrait un stockage objet (Cloudflare R2, Vercel Blob, AWS S3) à la place des
-    pièces jointes Airtable — c'est une refonte de la couche d'upload.
-11. **Lecture des codecs exotiques (AC3, DTS, HEVC, MKV…)** : le lecteur tente d'abord
-    la lecture native du navigateur. Si le codec n'est pas pris en charge, il propose
-    de convertir le fichier à la volée avec **ffmpeg.wasm** (téléchargé depuis le CDN,
-    ~30 Mo la première fois, mis en cache). C'est lent et gourmand en mémoire : sur ce
-    projet les fichiers font ≤ 3 Mo, donc ça reste utilisable, mais ce n'est pas
-    instantané comme VLC. Certains formats très rares peuvent échouer malgré tout.
+1. **Stockage réel partagé** : le quota « 20 Go/utilisateur » est une convention interne
+   (compteur en D1). Le stockage physique est celui du bucket R2, partagé par tous les
+   comptes. 50 comptes × 15 Go = 750 Go : **impossible à 0 €** (R2 gratuit = 10 Go).
+   « Quota par utilisateur » ≠ « coût » : R2 facture les Go réellement stockés.
+2. **R2 exige une carte bancaire à l'activation** (jamais débitée sous 10 Go) ; au-delà,
+   facturation à l'usage (0,015 $/Go/mois, egress gratuit).
+3. **Rate limiting en mémoire** : les compteurs vivent dans l'instance Vercel et repartent
+   à zéro au cold start. Un attaquant patient peut contourner. Solution pro : Upstash Redis / Vercel KV.
+4. **JWT sans révocation** : un jeton volé reste valide jusqu'à 7 jours (sauf rotation de
+   `SESSION_SECRET`). Solution pro : liste de révocation en base.
+5. **D1 = base SQL distante** : chaque page de liste fait 1 requête REST D1 (latence
+   ~50-150 ms). Très correct, mais pas gratuit-infini : 100 k écritures/jour en gratuit.
+6. **Upload direct mais signé** : le serveur doit être joignable pour obtenir l'URL
+   pré-signée (`POST /api/files/upload`) **avant** l'envoi vers R2, puis pour clôturer
+   (`POST /api/files/finalize`). Si la clôture échoue, l'objet R2 orphelin n'apparaît pas
+   dans la liste.
+7. **Pas de zéro-knowledge** : les fichiers sont chez Cloudflare, protégés par leur sécurité
+   (TLS en transit, chiffrement au repos). GiveCloud ne peut pas promettre le chiffrement
+   de bout en bout.
+8. **Suppression = corbeille logique puis purge** : la ligne D1 reçoit `supprimeLe` pendant
+   30 jours ; l'objet R2 est supprimé lors de la purge (ou immédiatement sur « définitive »
+   / « vider la corbeille »).
+9. **Plan Vercel Hobby** : fonctions limitées (durée, instances) — largement suffisant pour
+   un usage perso, à upgrader pour un vrai service. **Aucun fichier ne traverse Vercel**.
+10. **Lecteur de codecs exotiques (AC3, DTS, HEVC, MKV…)** : lecture native d'abord, sinon
+    conversion à la volée via **ffmpeg.wasm** (CDN, ~30 Mo la 1ʳᵉ fois, mis en cache).
+    Lent et gourmand en mémoire, surtout avec de gros fichiers — ce n'est pas VLC.

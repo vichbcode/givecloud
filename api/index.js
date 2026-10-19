@@ -6,8 +6,9 @@
 // la réponse. AUCUNE logique métier ici — tout est dans lib/app.js.
 //
 // Variables d'environnement requises (dashboard Vercel → Settings) :
-//   AIRTABLE_TOKEN, BASE_ID, SESSION_SECRET
-// Optionnelles : USERS_TABLE, FILES_TABLE, SHARES_TABLE,
+//   SESSION_SECRET, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN,
+//   D1_DATABASE_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+// Optionnelles : R2_ACCOUNT_ID (= CLOUDFLARE_ACCOUNT_ID),
 //                QUOTA_MO_DEFAULT, ALLOWED_ORIGIN
 // ═══════════════════════════════════════════════════════════════
 
@@ -16,13 +17,15 @@ import { gererRequete } from '../lib/app.js';
 /** Construit la configuration à partir des variables d'environnement Vercel. */
 function chargerConfig() {
   return {
-    AIRTABLE_TOKEN: process.env.AIRTABLE_TOKEN || '',
-    BASE_ID: process.env.BASE_ID || '',
     SESSION_SECRET: process.env.SESSION_SECRET || '',
-    USERS_TABLE: process.env.USERS_TABLE || 'Users',
-    FILES_TABLE: process.env.FILES_TABLE || 'Files',
-    SHARES_TABLE: process.env.SHARES_TABLE || 'Shares',
-    QUOTA_MO_DEFAULT: process.env.QUOTA_MO_DEFAULT || '100',
+    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN || '',
+    D1_DATABASE_ID: process.env.D1_DATABASE_ID || '',
+    R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    R2_BUCKET: process.env.R2_BUCKET || '',
+    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
+    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
+    QUOTA_MO_DEFAULT: process.env.QUOTA_MO_DEFAULT || '',
     ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN || ''
   };
 }
@@ -30,7 +33,8 @@ function chargerConfig() {
 export default async function handler(req, res) {
   // ── Vérification de la configuration (message clair pour le déploiement) ──
   const config = chargerConfig();
-  const manquantes = ['AIRTABLE_TOKEN', 'BASE_ID', 'SESSION_SECRET']
+  const manquantes = ['SESSION_SECRET', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN',
+    'D1_DATABASE_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
     .filter(function (cle) { return !config[cle]; });
   if (manquantes.length > 0) {
     // On log le détail côté serveur, on ne renvoie jamais quoi que ce soit au client.

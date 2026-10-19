@@ -8,8 +8,8 @@
   'use strict';
 
   const API = (window.GIVECLOUD_CONFIG && window.GIVECLOUD_CONFIG.API_BASE) || '';
-  // Limite d'upload : récupérée sur /api/health au démarrage (3 Mo sur Vercel).
-  let MAX_OCTETS = 3 * 1024 * 1024;
+  // Limite d'upload : récupérée sur /api/health au démarrage (1 Go via R2).
+  let MAX_OCTETS = 1024 * 1024 * 1024;
 
   // ── État de l'application ──
   const etat = {
@@ -55,8 +55,7 @@
   }
 
   function texteZoneDepot() {
-    const mo = Math.round(MAX_OCTETS / (1024 * 1024));
-    return 'Glisse tes fichiers ici (' + mo + ' Mo max par envoi) ou clique sur « Envoyer »';
+    return 'Glisse tes fichiers ici (' + formaterTaille(MAX_OCTETS) + ' max par fichier) ou clique sur « Envoyer »';
   }
 
   function octetsDe(texte) {
@@ -522,41 +521,61 @@
     let succes = 0;
     let reste = liste.length;
 
+    function finir() {
+      reste--;
+      if (reste === 0) termineUpload(succes, liste.length);
+    }
+
     liste.forEach(function (f) {
       if (f.size > MAX_OCTETS) {
-        window.GC_toast('« ' + f.name + ' » dépasse ' + Math.round(MAX_OCTETS / 1048576) + ' Mo — ignoré.', 'erreur');
-        reste--;
+        window.GC_toast('« ' + f.name + ' » dépasse ' + formaterTaille(MAX_OCTETS) + ' — ignoré.', 'erreur');
+        finir();
         return;
       }
-      const form = new FormData();
-      form.append('fichier', f, f.name);
-      form.append('chemin', etat.chemin);
+      envoyerUnFichier(f)
+        .then(function () { succes++; })
+        .catch(function (err) {
+          window.GC_toast((err && err.message) || ('Échec de l\'envoi de ' + f.name), 'erreur');
+        })
+        .then(finir);
+    });
+  }
 
+  /**
+   * Envoi en 3 temps : 1) le serveur autorise (URL R2 pré-signée),
+   * 2) le navigateur envoie les octets DIRECTEMENT à R2 (avec progression),
+   * 3) le serveur clôture et crée l'entrée. Aucun octet ne passe par Vercel.
+   */
+  async function envoyerUnFichier(f) {
+    const autorisation = await api('/api/files/upload', {
+      method: 'POST',
+      body: { nom: f.name, chemin: etat.chemin, taille: f.size, type: f.type }
+    });
+    await envoyerVersR2(autorisation.uploadUrl, f);
+    await api('/api/files/finalize', {
+      method: 'POST',
+      body: { cle: autorisation.cle, nom: f.name, chemin: etat.chemin, type: f.type }
+    });
+  }
+
+  function envoyerVersR2(url, f) {
+    return new Promise(function (resolve, reject) {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', API + '/api/files/upload');
-      xhr.withCredentials = Boolean(API);
+      xhr.open('PUT', url);
+      if (f.type) xhr.setRequestHeader('Content-Type', f.type);
       xhr.upload.addEventListener('progress', function (e) {
         if (e.lengthComputable && zoneDepot) {
           zoneDepot.textContent = 'Envoi de ' + f.name + '… ' + Math.round((e.loaded / e.total) * 100) + '%';
         }
       });
       xhr.addEventListener('load', function () {
-        reste--;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          succes++;
-        } else {
-          let msg = 'Échec de l\'envoi de ' + f.name;
-          try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* non-JSON */ }
-          window.GC_toast(msg, 'erreur');
-        }
-        if (reste === 0) termineUpload(succes, liste.length);
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error('Échec de l\'envoi vers le stockage (' + xhr.status + ').'));
       });
       xhr.addEventListener('error', function () {
-        reste--;
-        window.GC_toast('Erreur réseau lors de l\'envoi de ' + f.name, 'erreur');
-        if (reste === 0) termineUpload(succes, liste.length);
+        reject(new Error('Erreur réseau lors de l\'envoi de ' + f.name));
       });
-      xhr.send(form);
+      xhr.send(f);
     });
   }
 

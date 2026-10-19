@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // GiveCloud — page login : inscription / connexion
 // Le jeton de session vit UNIQUEMENT dans un cookie HttpOnly posé
-// par le Worker. Ce script ne stocke aucun secret côté navigateur.
+// par l'API. Ce script ne stocke aucun secret côté navigateur.
 // ═══════════════════════════════════════════════════════════════
 (function () {
   'use strict';
@@ -91,7 +91,7 @@
     try {
       const reponse = await fetch(API + '/api/auth/' + (mode === 'inscription' ? 'register' : 'login'), {
         method: 'POST',
-        // same-origin : le cookie est envoyé automatiquement si on est sur le Worker.
+        // same-origin : le cookie est envoyé automatiquement si on est sur l'API.
         // Si front et API sont sur des domaines différents : 'include'.
         credentials: API ? 'include' : 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -107,7 +107,7 @@
         return;
       }
 
-      // Le Worker a posé le cookie HttpOnly : on n'a rien à stocker ici.
+      // L'API a posé le cookie HttpOnly : on n'a rien à stocker ici.
       if (window.GC_toast) {
         window.GC_toast(mode === 'inscription' ? 'Compte créé, bienvenue !' : 'Connexion réussie.', 'succes');
       }

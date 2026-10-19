@@ -80,7 +80,7 @@
                   <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
                 </div>
                 <strong>Dépose un fichier ici</strong>
-                <p>ou clique pour parcourir — 5 Mo max par envoi, démo sans compte</p>
+                <p>ou clique pour parcourir — 1 Go max par fichier, démo sans compte</p>
                 <input type="file" id="input-demo" class="sr-only" aria-hidden="true" tabindex="-1">
               </div>
               <div class="barre-progression" role="progressbar" aria-label="Progression de la démonstration" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="barre-demo"></div></div>
@@ -111,7 +111,7 @@
           <article class="carte-feature reveler">
             <span class="num">#1</span>
             <h3>Envoyer</h3>
-            <p>Glisse, dépose, c'est parti. Barre de progression en temps réel, 5 Mo par fichier.</p>
+            <p>Glisse, dépose, c'est parti. Envoi direct au stockage, barre de progression en temps réel, jusqu'à 1 Go par fichier.</p>
             <div class="illu" aria-hidden="true">
               <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 17V5m0 0l-5 5m5-5l5 5"/><path d="M4 19h16"/></svg>
             </div>
@@ -185,7 +185,7 @@
           <article class="carte-app reveler">
             <span class="badge-plat">:api:</span>
             <h3>API</h3>
-            <p>Une API REST simple derrière le Worker. Branche tes scripts, tes automatisations, ton CI.</p>
+            <p>Une API REST simple. Branche tes scripts, tes automatisations, ton CI.</p>
           </article>
         </div>
       </div>
@@ -199,7 +199,7 @@
         <div class="faq-liste">
           <details class="faq-item reveler">
             <summary>Comment ça marche ?</summary>
-            <div class="reponse">Tu crées un compte, tu dépôtes tes fichiers, ils sont stockés dans un espace chiffré en transit. Un petit serveur (Worker Cloudflare) s'occupe de tout : authentification, validation, et pont avec le stockage. Toi, tu vois juste une liste de fichiers.</div>
+            <div class="reponse">Tu crées un compte, tu déposes tes fichiers, ils sont stockés dans un espace chiffré en transit. Un petit serveur (API Vercel) s'occupe de l'authentification et de la validation, et les fichiers partent directement vers le stockage objet Cloudflare R2. Toi, tu vois juste une liste de fichiers.</div>
           </details>
           <details class="faq-item reveler">
             <summary>C'est gratuit ?</summary>
@@ -207,11 +207,11 @@
           </details>
           <details class="faq-item reveler">
             <summary>Mes données sont-elles sûres ?</summary>
-            <div class="reponse">Les mots de passe sont hachés (PBKDF2, sel unique), les sessions vivent en cookie HttpOnly sécurisé, et chaque requête vérifie que le fichier t'appartient bien. Le stockage est chez Airtable, protégé par leur infrastructure ; le service ne lit jamais tes mots de passe en clair.</div>
+            <div class="reponse">Les mots de passe sont hachés (PBKDF2, sel unique), les sessions vivent en cookie HttpOnly sécurisé, et chaque requête vérifie que le fichier t'appartient bien. Le stockage est chez Cloudflare R2 (chiffrement en transit et au repos), protégé par leur infrastructure ; le service ne lit jamais tes mots de passe en clair.</div>
           </details>
           <details class="faq-item reveler">
             <summary>Quelle taille de fichier maximum ?</summary>
-            <div class="reponse">5 Mo par fichier (limite technique du stockage utilisé). La limite est vérifiée côté navigateur pour l'expérience, et côté serveur pour la sécurité — contourner le front ne sert à rien.</div>
+            <div class="reponse">1 Go par fichier (limite technique de stockage objet). La limite est vérifiée côté navigateur pour l'expérience, et côté serveur pour la sécurité — contourner le front ne sert à rien.</div>
           </details>
           <details class="faq-item reveler">
             <summary>Que se passe-t-il si je supprime un fichier ?</summary>
@@ -289,7 +289,7 @@
         <h2 class="reveler" style="font-size:clamp(1.9rem,4.5vw,2.6rem)">Prêt en 3 étapes</h2>
         <ol class="reveler" style="color:var(--muted); font-size:1.05rem; display:grid; gap:.8rem; padding-left:1.2rem">
           <li><strong style="color:var(--fg)">Crée ton compte</strong> — e-mail et mot de passe, c'est tout.</li>
-          <li><strong style="color:var(--fg)">Dépose tes fichiers</strong> — glisser-déposer ou bouton, jusqu'à 5 Mo par envoi.</li>
+          <li><strong style="color:var(--fg)">Dépose tes fichiers</strong> — glisser-déposer ou bouton, jusqu'à 1 Go par fichier.</li>
           <li><strong style="color:var(--fg)">Partage un lien</strong> — expiration au choix, révocable à tout moment.</li>
         </ol>
         <p style="margin-top:1.6rem"><a class="btn btn-bleu reveler" href="login.html?mode=inscription">Créer mon espace maintenant</a></p>
