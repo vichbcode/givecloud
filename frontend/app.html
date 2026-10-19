@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0000f2">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+  <meta name="robots" content="noindex">
+  <title>Mon cloud — GiveCloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230000f2'/%3E%3Cpath d='M8 18c0-4.4 3.6-8 8-8s8 3.6 8 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='22' r='3' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+
+  <!-- Barre mobile (visible < 900px) -->
+  <div class="barre-mobile-app">
+    <a class="sidebar-logo" href="index.html" style="font-size:1rem"><span class="pastille" aria-hidden="true"></span>GC</a>
+    <nav class="sidebar-nav" aria-label="Sections (mobile)">
+      <button type="button" data-vue="fichiers" class="actif">Fichiers</button>
+      <button type="button" data-vue="partages">Partages</button>
+      <button type="button" data-vue="corbeille">Corbeille</button>
+    </nav>
+    <button class="btn-icone" id="btn-deconnexion-mobile" type="button" title="Se déconnecter" aria-label="Se déconnecter" style="background:rgba(255,255,255,.15); border-color:transparent; color:#fff">⏻</button>
+  </div>
+
+  <div class="app">
+    <!-- ═════════ Sidebar bleue ═════════ -->
+    <aside class="sidebar">
+      <a class="sidebar-logo" href="index.html"><span class="pastille" aria-hidden="true"></span>GiveCloud</a>
+      <nav class="sidebar-nav" aria-label="Sections">
+        <button type="button" data-vue="fichiers" class="actif">
+          <span aria-hidden="true">📁</span> Fichiers
+        </button>
+        <button type="button" data-vue="partages">
+          <span aria-hidden="true">🔗</span> Partages
+        </button>
+        <button type="button" data-vue="corbeille">
+          <span aria-hidden="true">🗑</span> Corbeille
+        </button>
+      </nav>
+      <div class="sidebar-bas">
+        <div class="jauge-quota">
+          <div class="titre">// stockage</div>
+          <div class="jauge-barre" role="progressbar" aria-label="Quota de stockage utilisé" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="jauge-remplissage"></div>
+          </div>
+          <div class="detail" id="jauge-detail">—</div>
+        </div>
+        <div>
+          <div class="sidebar-user" id="email-user">…</div>
+          <button class="btn btn-blanc btn-petit" id="btn-deconnexion" type="button" style="width:100%">Se déconnecter</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ═════════ Zone principale ═════════ -->
+    <div class="app-main">
+      <header class="entete-app">
+        <!-- Fil d'ariane (vue fichiers) -->
+        <nav class="fil-ariane" id="fil-ariane" aria-label="Chemin courant"></nav>
+
+        <div class="outils-app" id="outils-fichiers">
+          <input type="search" class="recherche" id="recherche" placeholder="Rechercher…" aria-label="Rechercher un fichier">
+          <select class="select-tri" id="tri" aria-label="Trier par">
+            <option value="nom">Nom</option>
+            <option value="taille">Taille</option>
+            <option value="creeLe">Date</option>
+          </select>
+          <button class="btn btn-contour btn-petit" id="btn-dossier" type="button">+ Dossier</button>
+          <button class="btn btn-bleu btn-petit" id="btn-upload" type="button">↑ Envoyer</button>
+          <input type="file" id="input-upload" multiple class="sr-only" aria-hidden="true" tabindex="-1">
+        </div>
+      </header>
+
+      <main class="zone-contenu" id="zone-contenu">
+        <!-- ═══ Vue : fichiers ═══ -->
+        <section id="vue-fichiers" aria-label="Mes fichiers">
+          <div class="zone-depot-app" id="zone-depot-app">
+            Glisse tes fichiers ici (5 Mo max par envoi) ou clique sur « Envoyer »
+          </div>
+          <div id="conteneur-liste"></div>
+        </section>
+
+        <!-- ═══ Vue : partages ═══ -->
+        <section id="vue-partages" hidden aria-label="Mes partages">
+          <p class="label-mono">// liens de partage actifs</p>
+          <div id="liste-partages-app"></div>
+        </section>
+
+        <!-- ═══ Vue : corbeille ═══ -->
+        <section id="vue-corbeille" hidden aria-label="Corbeille">
+          <p class="label-mono">// corbeille — purge automatique après 30 jours</p>
+          <div id="liste-corbeille"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ═════════ Modales ═════════ -->
+
+  <!-- Renommer -->
+  <div class="modale-fond" id="modale-renommer" role="dialog" aria-modal="true" aria-labelledby="titre-renommer">
+    <div class="modale">
+      <h2 id="titre-renommer">Renommer</h2>
+      <div class="champ">
+        <label for="input-renommer">Nouveau nom</label>
+        <input type="text" id="input-renommer" maxlength="200">
+      </div>
+      <div class="pied">
+        <button class="btn btn-contour btn-petit" type="button" data-fermer>Annuler</button>
+        <button class="btn btn-bleu btn-petit" type="button" id="confirmer-renommer">Renommer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Déplacer -->
+  <div class="modale-fond" id="modale-deplacer" role="dialog" aria-modal="true" aria-labelledby="titre-deplacer">
+    <div class="modale">
+      <h2 id="titre-deplacer">Déplacer vers</h2>
+      <p style="color:var(--muted); font-size:.9rem">Chemin de destination. <code>/</code> = racine. Ex. <code>/photos/2026</code></p>
+      <div class="champ">
+        <label for="input-deplacer">Chemin</label>
+        <input type="text" id="input-deplacer" maxlength="500" placeholder="/">
+      </div>
+      <div class="pied">
+        <button class="btn btn-contour btn-petit" type="button" data-fermer>Annuler</button>
+        <button class="btn btn-bleu btn-petit" type="button" id="confirmer-deplacer">Déplacer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nouveau dossier -->
+  <div class="modale-fond" id="modale-dossier" role="dialog" aria-modal="true" aria-labelledby="titre-dossier">
+    <div class="modale">
+      <h2 id="titre-dossier">Nouveau dossier</h2>
+      <div class="champ">
+        <label for="input-dossier">Nom du dossier</label>
+        <input type="text" id="input-dossier" maxlength="100" placeholder="Mes photos">
+      </div>
+      <div class="pied">
+        <button class="btn btn-contour btn-petit" type="button" data-fermer>Annuler</button>
+        <button class="btn btn-bleu btn-petit" type="button" id="confirmer-dossier">Créer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Partager -->
+  <div class="modale-fond" id="modale-partager" role="dialog" aria-modal="true" aria-labelledby="titre-partager">
+    <div class="modale">
+      <h2 id="titre-partager">Partager</h2>
+      <p style="color:var(--muted); font-size:.9rem" id="partager-nom"></p>
+      <div class="champ">
+        <label for="input-expiration">Expiration du lien</label>
+        <select id="input-expiration">
+          <option value="1">1 heure</option>
+          <option value="24" selected>24 heures</option>
+          <option value="72">3 jours</option>
+          <option value="168">7 jours</option>
+          <option value="720">30 jours</option>
+        </select>
+      </div>
+      <button class="btn btn-bleu btn-petit" type="button" id="creer-partage">Créer le lien</button>
+      <div id="lien-cree" hidden>
+        <div class="lien-partage">
+          <span id="texte-lien"></span>
+          <button class="btn-icone" type="button" id="copier-lien" title="Copier">⧉</button>
+        </div>
+      </div>
+      <h3 style="font-size:1rem; margin-top:1.4rem">Liens existants</h3>
+      <div class="liste-partages" id="liste-partages-modale"></div>
+      <div class="pied">
+        <button class="btn btn-contour btn-petit" type="button" data-fermer>Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aperçu -->
+  <div class="modale-fond" id="modale-apercu" role="dialog" aria-modal="true" aria-labelledby="titre-apercu">
+    <div class="modale modale-apercu">
+      <h2 id="titre-apercu">Aperçu</h2>
+      <div class="contenu-apercu" id="contenu-apercu"></div>
+      <div class="pied">
+        <a class="btn btn-bleu btn-petit" id="apercu-telecharger" href="#" download>Télécharger</a>
+        <button class="btn btn-contour btn-petit" type="button" data-fermer>Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation de suppression -->
+  <div class="modale-fond" id="modale-supprimer" role="dialog" aria-modal="true" aria-labelledby="titre-supprimer">
+    <div class="modale">
+      <h2 id="titre-supprimer">Mettre à la corbeille ?</h2>
+      <p style="color:var(--muted)" id="supprimer-nom"></p>
+      <p style="color:var(--muted); font-size:.9rem">Il sera purgé définitivement après 30 jours. Tu peux le restaurer d'ici là.</p>
+      <div class="pied">
+        <button class="btn btn-contour btn-petit" type="button" data-fermer>Annuler</button>
+        <button class="btn btn-danger btn-petit" type="button" id="confirmer-supprimer">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="js/theme.js" defer></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>

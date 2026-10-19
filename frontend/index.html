@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0000f2">
+  <!-- CSP stricte : uniquement nos ressources + Google Fonts. Aucun script externe. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+  <meta name="description" content="GiveCloud — le cloud de stockage de fichiers qui se donne à tous. Envoyer, organiser, partager. Gratuit.">
+  <title>GiveCloud — Le cloud qui se donne à tous</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230000f2'/%3E%3Cpath d='M8 18c0-4.4 3.6-8 8-8s8 3.6 8 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='22' r='3' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+
+  <!-- ═════════ Navigation sticky ═════════ -->
+  <header class="nav">
+    <div class="conteneur nav-inner">
+      <a class="nav-logo" href="index.html">
+        <span class="pastille" aria-hidden="true"></span>GiveCloud
+      </a>
+      <nav class="nav-liens" aria-label="Navigation principale">
+        <a href="#fonctionnalites">Fonctionnalités</a>
+        <a href="#faq">FAQ</a>
+        <a href="#guide">Guide</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="bascule-theme" id="btn-theme" type="button" aria-label="Basculer le mode sombre">:thème:</button>
+        <a class="btn btn-contour btn-petit" href="login.html">Se connecter</a>
+        <a class="btn btn-bleu btn-petit" href="login.html?mode=inscription">Commencer</a>
+        <button class="nav-burger" id="btn-burger" type="button" aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
+      </div>
+    </div>
+  </header>
+  <div class="menu-mobile" id="menu-mobile">
+    <a href="#fonctionnalites">Fonctionnalités</a>
+    <a href="#applications">Applications</a>
+    <a href="#faq">FAQ</a>
+    <a href="#tarifs">Tarifs</a>
+    <a href="login.html">Se connecter</a>
+    <a href="login.html?mode=inscription"><strong>Commencer</strong></a>
+  </div>
+
+  <main>
+    <!-- ═════════ Hero plein écran ═════════ -->
+    <section class="hero">
+      <div class="conteneur">
+        <p class="label-mono">// cloud de fichiers · multi-utilisateurs · gratuit</p>
+        <h1 class="hero-titre">
+          Le Cloud<br>
+          <span class="ligne2">Qui Se Donne</span><br>
+          À Tous
+        </h1>
+        <p class="hero-sous">
+          Envoie, organise et partage tes fichiers depuis n'importe où.
+          Pas d'application à installer, pas de carte bancaire. Un navigateur suffit.
+        </p>
+        <div class="hero-ctas">
+          <a class="btn btn-bleu" href="login.html?mode=inscription">Créer mon espace</a>
+          <a class="btn btn-contour" href="login.html">Se connecter</a>
+        </div>
+
+        <!-- Carte façon terminal avec onglets :Web: :Mobile: et démo upload -->
+        <div class="terminal reveler" role="region" aria-label="Démonstration de l'interface">
+          <div class="terminal-barre">
+            <div class="terminal-pastilles" aria-hidden="true"><span></span><span></span><span></span></div>
+            <span class="label-mono" style="color:#8888b8">givecloud — depôt</span>
+            <div class="terminal-onglets" role="tablist" aria-label="Type d'appareil">
+              <button class="terminal-onglet" role="tab" id="tab-web" aria-selected="true" aria-controls="panneau-web" type="button">:Web:</button>
+              <button class="terminal-onglet" role="tab" id="tab-mobile" aria-selected="false" aria-controls="panneau-mobile" type="button">:Mobile:</button>
+            </div>
+          </div>
+          <div class="terminal-corps">
+            <div id="panneau-web" role="tabpanel" aria-labelledby="tab-web">
+              <div class="zone-depot" id="zone-depot-demo">
+                <div class="ico" aria-hidden="true">
+                  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                </div>
+                <strong>Dépose un fichier ici</strong>
+                <p>ou clique pour parcourir — 5 Mo max par envoi, démo sans compte</p>
+                <input type="file" id="input-demo" class="sr-only" aria-hidden="true" tabindex="-1">
+              </div>
+              <div class="barre-progression" role="progressbar" aria-label="Progression de la démonstration" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="barre-demo"></div></div>
+              <p id="statut-demo" class="label-mono" style="color:#8888b8; margin-top:.7rem">// en attente d'un fichier…</p>
+            </div>
+            <div id="panneau-mobile" role="tabpanel" aria-labelledby="tab-mobile" hidden>
+              <div class="zone-depot">
+                <div class="ico" aria-hidden="true">
+                  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="2" width="10" height="20" rx="2"/><circle cx="12" cy="18" r="1" fill="currentColor"/></svg>
+                </div>
+                <strong>Même chose, dans ta poche</strong>
+                <p>GiveCloud fonctionne comme une app : ajoute la page à ton écran d'accueil (PWA).</p>
+                <p style="color:#6a6a9a">// le glisser-déposer devient « partager vers GiveCloud »</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ Fonctionnalités ═════════ -->
+    <section class="section section-alt" id="fonctionnalites">
+      <div class="conteneur">
+        <p class="label-mono reveler">// fonctionnalités</p>
+        <h2 class="reveler" style="font-size:clamp(1.9rem,4.5vw,3rem)">Tout ce qu'un cloud doit faire.<br>Rien de plus, rien de moins.</h2>
+        <div class="grille-features" style="margin-top:2.5rem">
+
+          <article class="carte-feature reveler">
+            <span class="num">#1</span>
+            <h3>Envoyer</h3>
+            <p>Glisse, dépose, c'est parti. Barre de progression en temps réel, 5 Mo par fichier.</p>
+            <div class="illu" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 17V5m0 0l-5 5m5-5l5 5"/><path d="M4 19h16"/></svg>
+            </div>
+          </article>
+
+          <article class="carte-feature reveler">
+            <span class="num">#2</span>
+            <h3>Organiser</h3>
+            <p>Des dossiers simples, un chemin clair. Déplace tout en deux clics.</p>
+            <div class="illu" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            </div>
+          </article>
+
+          <article class="carte-feature reveler">
+            <span class="num">#3</span>
+            <h3>Partager</h3>
+            <p>Un lien, une expiration, un bouton révoquer. Tu gardes le contrôle.</p>
+            <div class="illu" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+            </div>
+          </article>
+
+          <article class="carte-feature reveler">
+            <span class="num">#4</span>
+            <h3>Protéger</h3>
+            <p>Mots de passe hachés, sessions en cookie sécurisé, chaque fichier vérifie son propriétaire.</p>
+            <div class="illu" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+            </div>
+          </article>
+
+          <article class="carte-feature reveler">
+            <span class="num">#5</span>
+            <h3>Chercher</h3>
+            <p>Recherche instantanée et tri par nom, taille ou date. Retrouve tout.</p>
+            <div class="illu" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            </div>
+          </article>
+
+          <article class="carte-feature reveler">
+            <span class="num">#6</span>
+            <h3>Sauvegarder</h3>
+            <p>Jauge de quota visible, corbeille 30 jours, rien ne disparaît à l'accident.</p>
+            <div class="illu" aria-hidden="true">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+            </div>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ Applications ═════════ -->
+    <section class="section section-bleu" id="applications">
+      <div class="conteneur">
+        <p class="label-mono reveler">// applications</p>
+        <h2 class="reveler" style="font-size:clamp(1.9rem,4.5vw,3rem)">Un cloud, trois façons<br>d'y accéder.</h2>
+        <div class="grille-apps" style="margin-top:2.5rem">
+          <article class="carte-app reveler">
+            <span class="badge-plat">:navigateur:</span>
+            <h3>Web</h3>
+            <p>Ton cloud dans n'importe quel navigateur, sur n'importe quelle machine. Rien à installer.</p>
+          </article>
+          <article class="carte-app reveler">
+            <span class="badge-plat">:pwa:</span>
+            <h3>Mobile</h3>
+            <p>Ajoute GiveCloud à ton écran d'accueil : elle s'ouvre comme une app native, offline-friendly.</p>
+          </article>
+          <article class="carte-app reveler">
+            <span class="badge-plat">:api:</span>
+            <h3>API</h3>
+            <p>Une API REST simple derrière le Worker. Branche tes scripts, tes automatisations, ton CI.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ FAQ ═════════ -->
+    <section class="section" id="faq">
+      <div class="conteneur">
+        <p class="label-mono reveler" style="text-align:center">// faq</p>
+        <h2 class="reveler" style="text-align:center; font-size:clamp(1.9rem,4.5vw,3rem); margin-bottom:2.5rem">Questions fréquentes</h2>
+        <div class="faq-liste">
+          <details class="faq-item reveler">
+            <summary>Comment ça marche ?</summary>
+            <div class="reponse">Tu crées un compte, tu dépôtes tes fichiers, ils sont stockés dans un espace chiffré en transit. Un petit serveur (Worker Cloudflare) s'occupe de tout : authentification, validation, et pont avec le stockage. Toi, tu vois juste une liste de fichiers.</div>
+          </details>
+          <details class="faq-item reveler">
+            <summary>C'est gratuit ?</summary>
+            <div class="reponse">Oui, l'offre Gratuit donne 100 Mo de stockage, des dossiers, du partage et la corbeille. Les offres Plus, Super et Ultra agrandissent le quota. Aucune carte bancaire n'est demandée pour commencer.</div>
+          </details>
+          <details class="faq-item reveler">
+            <summary>Mes données sont-elles sûres ?</summary>
+            <div class="reponse">Les mots de passe sont hachés (PBKDF2, sel unique), les sessions vivent en cookie HttpOnly sécurisé, et chaque requête vérifie que le fichier t'appartient bien. Le stockage est chez Airtable, protégé par leur infrastructure ; le service ne lit jamais tes mots de passe en clair.</div>
+          </details>
+          <details class="faq-item reveler">
+            <summary>Quelle taille de fichier maximum ?</summary>
+            <div class="reponse">5 Mo par fichier (limite technique du stockage utilisé). La limite est vérifiée côté navigateur pour l'expérience, et côté serveur pour la sécurité — contourner le front ne sert à rien.</div>
+          </details>
+          <details class="faq-item reveler">
+            <summary>Que se passe-t-il si je supprime un fichier ?</summary>
+            <div class="reponse">Il part en corbeille pendant 30 jours : tu peux le restaurer à tout moment. Après 30 jours, il est définitivement purgé. Les liens de partage associés meurent avec lui.</div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ Tarifs ═════════ -->
+    <section class="section section-alt" id="tarifs">
+      <div class="conteneur">
+        <p class="label-mono reveler">// tarifs</p>
+        <h2 class="reveler" style="font-size:clamp(1.9rem,4.5vw,3rem)">Le cloud de tout le monde,<br>au prix juste.</h2>
+        <div class="grille-tarifs" style="margin-top:3rem">
+
+          <article class="carte-tarif reveler">
+            <h3>Gratuit</h3>
+            <p class="prix">0 €<span>/mois</span></p>
+            <ul>
+              <li>100 Mo de stockage</li>
+              <li>Dossiers illimités</li>
+              <li>Partage par lien</li>
+              <li>Corbeille 30 jours</li>
+            </ul>
+            <a class="btn btn-contour" href="login.html?mode=inscription">Commencer</a>
+          </article>
+
+          <article class="carte-tarif populaire reveler">
+            <span class="badge-populaire">// most popular</span>
+            <h3>Plus</h3>
+            <p class="prix">3 €<span>/mois</span></p>
+            <ul>
+              <li>5 Go de stockage</li>
+              <li>Tout le plan Gratuit</li>
+              <li>Liens de partage longue durée</li>
+              <li>Support prioritaire</li>
+            </ul>
+            <a class="btn btn-bleu" href="login.html?mode=inscription">Choisir Plus</a>
+          </article>
+
+          <article class="carte-tarif reveler">
+            <h3>Super</h3>
+            <p class="prix">7 €<span>/mois</span></p>
+            <ul>
+              <li>20 Go de stockage</li>
+              <li>Tout le plan Plus</li>
+              <li>5 comptes familiaux</li>
+              <li>Historique de versions</li>
+            </ul>
+            <a class="btn btn-contour" href="login.html?mode=inscription">Choisir Super</a>
+          </article>
+
+          <article class="carte-tarif reveler">
+            <h3>Ultra</h3>
+            <p class="prix">15 €<span>/mois</span></p>
+            <ul>
+              <li>100 Go de stockage</li>
+              <li>Tout le plan Super</li>
+              <li>Accès API illimité</li>
+              <li>Assistance dédiée</li>
+            </ul>
+            <a class="btn btn-contour" href="login.html?mode=inscription">Choisir Ultra</a>
+          </article>
+
+        </div>
+        <p class="label-mono reveler" style="text-align:center; margin-top:1.5rem; color:var(--muted)">// les quotas de cette page vitrine sont illustratifs</p>
+      </div>
+    </section>
+
+    <!-- ═════════ Guide (ancre pour la nav) ═════════ -->
+    <section class="section" id="guide">
+      <div class="conteneur" style="max-width:780px">
+        <p class="label-mono reveler">// guide</p>
+        <h2 class="reveler" style="font-size:clamp(1.9rem,4.5vw,2.6rem)">Prêt en 3 étapes</h2>
+        <ol class="reveler" style="color:var(--muted); font-size:1.05rem; display:grid; gap:.8rem; padding-left:1.2rem">
+          <li><strong style="color:var(--fg)">Crée ton compte</strong> — e-mail et mot de passe, c'est tout.</li>
+          <li><strong style="color:var(--fg)">Dépose tes fichiers</strong> — glisser-déposer ou bouton, jusqu'à 5 Mo par envoi.</li>
+          <li><strong style="color:var(--fg)">Partage un lien</strong> — expiration au choix, révocable à tout moment.</li>
+        </ol>
+        <p style="margin-top:1.6rem"><a class="btn btn-bleu reveler" href="login.html?mode=inscription">Créer mon espace maintenant</a></p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═════════ Footer imposant ═════════ -->
+  <footer class="footer">
+    <div class="conteneur">
+      <p class="footer-slogan">Le Cloud<br>de tout le monde.</p>
+      <div class="footer-cols">
+        <div>
+          <h4>Produit</h4>
+          <a href="#fonctionnalites">Fonctionnalités</a>
+          <a href="#tarifs">Tarifs</a>
+          <a href="#applications">Applications</a>
+          <a href="app.html">Ouvrir l'app</a>
+        </div>
+        <div>
+          <h4>Ressources</h4>
+          <a href="#faq">FAQ</a>
+          <a href="#guide">Guide de démarrage</a>
+          <a href="login.html">Se connecter</a>
+          <a href="login.html?mode=inscription">Créer un compte</a>
+        </div>
+        <div>
+          <h4>Sécurité</h4>
+          <a href="#faq">Protection des données</a>
+          <a href="#faq">Mots de passe hachés</a>
+          <a href="#faq">Liens révocables</a>
+        </div>
+        <div>
+          <h4>Contact</h4>
+          <a href="mailto:bonjour@givecloud.example">bonjour@givecloud.example</a>
+          <a href="#faq">Signaler un problème</a>
+        </div>
+      </div>
+      <div class="footer-bas">
+        <span>© 2026 GiveCloud</span>
+        <span>Le Cloud de tout le monde.</span>
+      </div>
+    </div>
+  </footer>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="js/theme.js" defer></script>
+  <script src="js/landing.js" defer></script>
+</body>
+</html>

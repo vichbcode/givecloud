@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0000f2">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'">
+  <meta name="robots" content="noindex">
+  <title>Connexion — GiveCloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230000f2'/%3E%3Cpath d='M8 18c0-4.4 3.6-8 8-8s8 3.6 8 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='22' r='3' fill='white'/%3E%3C/svg%3E">
+</head>
+<body>
+
+  <header class="nav">
+    <div class="conteneur nav-inner">
+      <a class="nav-logo" href="index.html">
+        <span class="pastille" aria-hidden="true"></span>GiveCloud
+      </a>
+      <div class="nav-actions">
+        <button class="bascule-theme" id="btn-theme" type="button" aria-label="Basculer le mode sombre">:thème:</button>
+        <a class="btn btn-contour btn-petit" href="index.html">← Retour</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-centree">
+    <section class="carte-auth" aria-labelledby="titre-page">
+      <p class="label-mono">// espace personnel</p>
+      <h1 id="titre-page">Bienvenue.</h1>
+      <p style="color:var(--muted); margin:0" id="sous-titre">Connecte-toi ou crée ton espace en 10 secondes.</p>
+
+      <div class="onglets-auth" role="tablist" aria-label="Connexion ou inscription">
+        <button role="tab" id="tab-connexion" aria-selected="true" aria-controls="formulaire" type="button">Connexion</button>
+        <button role="tab" id="tab-inscription" aria-selected="false" aria-controls="formulaire" type="button">Inscription</button>
+      </div>
+
+      <div class="message-erreur" id="message-erreur" role="alert"></div>
+      <div class="message-info" id="message-info" role="status"></div>
+
+      <form id="formulaire" novalidate>
+        <div class="champ">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" name="email" autocomplete="email" required maxlength="254" placeholder="toi@exemple.fr">
+        </div>
+        <div class="champ">
+          <label for="motdepasse">Mot de passe <span id="aide-mdp" hidden>(8 caractères min.)</span></label>
+          <input type="password" id="motdepasse" name="motdepasse" autocomplete="current-password" required maxlength="200" placeholder="••••••••">
+        </div>
+        <button class="btn btn-bleu" id="btn-soumettre" type="submit" style="width:100%">Se connecter</button>
+      </form>
+
+      <p class="label-mono" style="margin-top:1.4rem; color:var(--muted); text-transform:none; letter-spacing:0">
+        // les mots de passe sont hachés (PBKDF2) côté serveur — jamais stockés en clair
+      </p>
+    </section>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="js/theme.js" defer></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/auth.js" defer></script>
+</body>
+</html>

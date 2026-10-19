@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────
+# GiveCloud — configuration du Cloudflare Worker
+# AUCUN secret ici : AIRTABLE_TOKEN, BASE_ID et SESSION_SECRET
+# sont ajoutés via `wrangler secret put ...` (dashboard Cloudflare).
+# ─────────────────────────────────────────────────────────────
+
+name = "givecloud-api"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Le Worker sert aussi le front statique (même origine → cookies SameSite=Strict OK).
+# Le dossier frontend/ est à la racine du projet, d'où le "../".
+[assets]
+directory = "../frontend"
+binding = "ASSETS"
+# On traite d'abord /api/* et /s/* dans le Worker, le reste va aux assets statiques.
+run_worker_first = ["/api/*", "/s/*"]
+
+# Variables NON sensibles (les secrets vont dans Cloudflare, pas ici).
+[vars]
+# Autorisations CORS : vide = même origine uniquement (recommandé).
+# À renseigner seulement si le front est hébergé ailleurs (ex. Cloudflare Pages).
+ALLOWED_ORIGIN = ""
+# Noms des tables Airtable (doivent correspondre aux onglets de la base).
+USERS_TABLE = "Users"
+FILES_TABLE = "Files"
+SHARES_TABLE = "Shares"
+# Quota de stockage initial attribué à chaque nouvel utilisateur (en Mo).
+QUOTA_MO_DEFAULT = "100"

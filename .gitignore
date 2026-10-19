@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────
+# GiveCloud — exclusions de secrets
+# Aucun secret ne doit jamais atterrir dans Git.
+# ─────────────────────────────────────────────
+
+# Secrets / variables d'environnement
+.env
+.env.*
+!.env.example
+*.secret
+secrets/
+wrangler-secrets.txt
+
+# Dépendances et build
+node_modules/
+.cache/
+dist/
+build/
+
+# Logs et sauvegardes
+*.log
+npm-debug.log*
+*.bak
+*.tmp
+
+# Éditeurs / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Wrangler (données locales d'auth, pas des secrets mais inutiles en Git)
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Vercel (lien local au projet, jamais commité)
+.vercel/
