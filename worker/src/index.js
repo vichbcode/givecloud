@@ -364,7 +364,7 @@ async function lireMessageErreur(res) {
     const data = await res.json();
     const type = data?.error?.type || '';
     // 422 arrive notamment quand la base a atteint ses 1 000 records (plan gratuit).
-    if (res.status === 422 && /INVALID|LIMIT|CAPACITY/i.test(type)) {
+    if (res.status === 422 && /LIMIT|CAPACITY/i.test(type)) {
       return "La base de données est pleine (limite du plan gratuit). Contacte l'administrateur.";
     }
     return null;
@@ -676,7 +676,7 @@ async function handlerUpload(request, env, utilisateur) {
   }
   // ── Validation 1 : taille (5 Mo, limite dure Airtable) ──
   if (fichier.size > MAX_FILE_BYTES) {
-    return json(request, env, { error: 'Fichier trop volumineux (5 Mo maximum).' }, 413);
+    return json(request, env, { error: `Fichier trop volumineux (${Math.round(MAX_FILE_BYTES / 1048576)} Mo maximum).` }, 413);
   }
   // ── Validation 2 : extension interdite ──
   const nom = assainirNom(fichier.name);
@@ -712,7 +712,7 @@ async function handlerUpload(request, env, utilisateur) {
     // Nettoyage : on ne laisse pas d'orphelin si l'upload a échoué.
     await atSupprimer(env, env.FILES_TABLE, record.id);
     const msg = resUpload.status === 413
-      ? 'Fichier trop volumineux (5 Mo maximum).'
+      ? `Fichier trop volumineux (${Math.round(MAX_FILE_BYTES / 1048576)} Mo maximum).`
       : "Échec de l'envoi vers le stockage. Réessaie.";
     return json(request, env, { error: msg }, resUpload.status === 413 ? 413 : 502);
   }
