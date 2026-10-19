@@ -486,7 +486,7 @@ async function calculerQuota(env, utilisateur) {
   let page;
   do {
     const params = new URLSearchParams({
-      filterByFormula: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', IS_BLANK({supprimeLe}))`,
+      filterByFormula: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', {supprimeLe}=BLANK())`,
       pageSize: '100'
     });
     if (page) params.set('offset', page);
@@ -503,7 +503,7 @@ async function calculerQuota(env, utilisateur) {
 async function purgerCorbeille(env, utilisateur) {
   const limite = new Date(Date.now() - TRASH_DAYS * 86400_000).toISOString();
   const { records } = await atLister(env, env.FILES_TABLE, {
-    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', NOT(IS_BLANK({supprimeLe})), IS_BEFORE({supprimeLe}, '${limite}'))`
+    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', NOT({supprimeLe}=BLANK()), IS_BEFORE({supprimeLe}, '${limite}'))`
   });
   if (!records) return;
   // Les dossiers vides supprimés sont purgés aussi (type dossier sans pièce jointe).
@@ -512,7 +512,7 @@ async function purgerCorbeille(env, utilisateur) {
     if (r.fields.type === TYPE_DOSSIER) {
       const cheminDossier = `${(r.fields.chemin || '/') === '/' ? '' : r.fields.chemin}/${r.fields.nom}`;
       const enfants = await atLister(env, env.FILES_TABLE, {
-        filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', IS_BLANK({supprimeLe}), OR({chemin}='${echapperFormule(cheminDossier)}', LEFT({chemin}, ${cheminDossier.length + 1})='${echapperFormule(cheminDossier)}/'))`
+        filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', {supprimeLe}=BLANK(), OR({chemin}='${echapperFormule(cheminDossier)}', LEFT({chemin}, ${cheminDossier.length + 1})='${echapperFormule(cheminDossier)}/'))`
       });
       if (enfants.records && enfants.records.length > 0) continue;
     }
@@ -643,7 +643,7 @@ async function handlerListerFichiers(request, env, utilisateur, url, ctx) {
   // Purge de la corbeille (fichiers de + de 30 jours) en tâche de fond.
   ctx.waitUntil(purgerCorbeille(env, utilisateur).catch(() => {}));
   const chemin = normaliserChemin(url.searchParams.get('chemin'));
-  let filtre = `{proprietaire}='${echapperFormule(utilisateur.id)}', IS_BLANK({supprimeLe}), {chemin}='${echapperFormule(chemin)}'`;
+  let filtre = `{proprietaire}='${echapperFormule(utilisateur.id)}', {supprimeLe}=BLANK(), {chemin}='${echapperFormule(chemin)}'`;
   filtre = `AND(${filtre})`;
   const triChamp = url.searchParams.get('tri') || 'nom';
   const triSens = url.searchParams.get('sens') === 'desc' ? 'desc' : 'asc';
@@ -751,7 +751,7 @@ async function handlerModifierFichier(request, env, utilisateur, id) {
     const ancienPrefixe = `${ancienChemin === '/' ? '' : ancienChemin}/${ancienNom}`;
     const nouveauPrefixe = `${nouveauCheminDossier === '/' ? '' : nouveauCheminDossier}/${nouveauNom}`;
     const { records: enfants } = await atLister(env, env.FILES_TABLE, {
-      filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', IS_BLANK({supprimeLe}), OR({chemin}='${echapperFormule(ancienPrefixe)}', LEFT({chemin}, ${ancienPrefixe.length + 1})='${echapperFormule(ancienPrefixe)}/'))`
+      filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', {supprimeLe}=BLANK(), OR({chemin}='${echapperFormule(ancienPrefixe)}', LEFT({chemin}, ${ancienPrefixe.length + 1})='${echapperFormule(ancienPrefixe)}/'))`
     });
     for (const enfant of enfants || []) {
       const suffixe = (enfant.fields.chemin || '/').slice(ancienPrefixe.length) || '';
@@ -768,7 +768,7 @@ async function handlerSupprimerFichier(request, env, utilisateur, id) {
   // Un dossier non vide ne part pas en corbeille : protège contre les suppressions en masse accidentelles.
   const cheminDossier = `${(fichier.fields.chemin || '/') === '/' ? '' : fichier.fields.chemin}/${fichier.fields.nom}`;
   const { records: enfants } = await atLister(env, env.FILES_TABLE, {
-    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', IS_BLANK({supprimeLe}), OR({chemin}='${echapperFormule(cheminDossier)}', LEFT({chemin}, ${cheminDossier.length + 1})='${echapperFormule(cheminDossier)}/'))`
+    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', {supprimeLe}=BLANK(), OR({chemin}='${echapperFormule(cheminDossier)}', LEFT({chemin}, ${cheminDossier.length + 1})='${echapperFormule(cheminDossier)}/'))`
   });
   if (fichier.fields.type === TYPE_DOSSIER && enfants && enfants.length > 0) {
     return json(request, env, { error: "Le dossier n'est pas vide." }, 409);
@@ -785,7 +785,7 @@ async function handlerSupprimerFichier(request, env, utilisateur, id) {
 
 async function handlerCorbeille(request, env, utilisateur) {
   const { records, erreur, message } = await atLister(env, env.FILES_TABLE, {
-    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', NOT(IS_BLANK({supprimeLe})))`,
+    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', NOT({supprimeLe}=BLANK()))`,
     tri: { champ: 'supprimeLe', sens: 'desc' }
   });
   if (erreur) {
@@ -869,7 +869,7 @@ async function handlerCreerDossier(request, env, utilisateur) {
   const cheminDossier = normaliserChemin(chemin);
   // Unicité du nom dans le dossier courant.
   const existant = await atLister(env, env.FILES_TABLE, {
-    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', IS_BLANK({supprimeLe}), {chemin}='${echapperFormule(cheminDossier)}', {nom}='${echapperFormule(nomPropre)}')`
+    filtre: `AND({proprietaire}='${echapperFormule(utilisateur.id)}', {supprimeLe}=BLANK(), {chemin}='${echapperFormule(cheminDossier)}', {nom}='${echapperFormule(nomPropre)}')`
   });
   if (existant.records && existant.records.length > 0) {
     return json(request, env, { error: 'Un élément porte déjà ce nom ici.' }, 409);
